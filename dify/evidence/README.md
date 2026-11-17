@@ -24,6 +24,24 @@ Artifact revision。
 | 4 | 「打翻酒杯」已不在活跃记忆中 | PASS |
 | 5 | 其余记忆仍然保留 | PASS |
 
+## DSL 已按 Dify 的导入器校验
+
+未安装 Docker 的情况下，`scripts/validate_with_dify.py` 把文档交给 Dify 1.19.0 自己使用的导入器
+`graphon.dsl.loads`（`graphon==0.8.0`，与 `dify-api` 依赖一致）。每个节点都走真实的 `*NodeData`
+Pydantic 模型：
+
+```
+accepted by Dify importer: 11 nodes, 12 edges
+  start_node StartNode / input_node CodeNode / context_node HttpRequestNode
+  prepare_node CodeNode / npc_node LLMNode / parse_node CodeNode
+  if_forget_node IfElseNode / forget_node HttpRequestNode
+  if_remember_node IfElseNode / remember_node HttpRequestNode / answer_node AnswerNode
+OK: every node passed its Dify schema model
+```
+
+故意写错字段会返回退出码 1（`DslError: 1 validation error for LLMNodeData`），说明该校验不是空转。
+这排除了 schema 层面的导入失败，但仍不代替一次在真实 Dify 中的导入与运行。
+
 ## 待补：Dify 端的运行证据
 
 题面 4.3 还要求"实际运行结果"包含 Dify 侧的流程编排与模型输出。补齐步骤：
@@ -45,5 +63,5 @@ docker compose logs lethe-powercontext > evidence/powercontext.log
 补齐后请把产物放在 `evidence/run-<时间戳>/` 下，并在本节记录环境与版本。
 
 > 说明：本仓库作者环境没有 Docker，故 Dify 侧运行未能在此完成。
-> DSL 已通过 `scripts/check_dsl.py` 的静态检查（节点连通性、变量引用、代码节点执行），
-> 该检查能发现导入后才会暴露的大部分结构性错误，但不代替一次真实导入。
+> DSL 已通过 `scripts/check_dsl.py` 的静态检查与 `scripts/validate_with_dify.py` 的真实 schema 校验，
+> 但两者都不代替一次在 Dify 中的实际导入与对话。

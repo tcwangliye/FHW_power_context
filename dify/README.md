@@ -94,7 +94,8 @@ dify/
 ├── scripts/
 │   ├── verify_demo.py             # 端到端验证，产出证据
 │   ├── reset_demo.py              # 恢复演示初始状态
-│   └── check_dsl.py               # DSL 静态检查 + 代码节点执行检查
+│   ├── check_dsl.py               # DSL 静态检查 + 代码节点执行检查
+│   └── validate_with_dify.py      # 用 Dify 自己的导入器校验 DSL
 ├── samples/
 │   └── scenario.md                # 验证样例
 └── evidence/
@@ -215,6 +216,8 @@ PowerContext 的数据在 named volume `lethe-powercontext-data` 里；`18000` �
 
 只有一个 DSL 文件，导入顺序无要求。导入后如果提示插件未安装，点安装即可。
 
+导入前可以先用 Dify 自己的导入器验证一遍（见 [6.2](#62-用-dify-的导入器校验-dsl)）。
+
 ### 5.6 应用入口
 
 两种，任选：
@@ -255,6 +258,39 @@ python scripts/verify_demo.py --mode bridge --player demo-lin
 ```
 
 已有的运行记录和"还需要补什么"见 [evidence/README.md](evidence/README.md)。
+
+### 6.2 用 Dify 的导入器校验 DSL
+
+[scripts/check_dsl.py](scripts/check_dsl.py) 做静态分析：节点连通性、变量引用、代码节点实际执行。
+[scripts/validate_with_dify.py](scripts/validate_with_dify.py) 更进一步，把文档交给 Dify 1.19.0
+自己用的导入器 `graphon.dsl.loads`，每个节点都会走真实的 `*NodeData` Pydantic 模型。
+
+```bash
+python -m pip install "graphon==0.8.0"
+python scripts/validate_with_dify.py
+```
+
+预期输出：
+
+```
+accepted by Dify importer: 11 nodes, 12 edges
+  start_node         StartNode
+  input_node         CodeNode
+  context_node       HttpRequestNode
+  prepare_node       CodeNode
+  npc_node           LLMNode
+  parse_node         CodeNode
+  if_forget_node     IfElseNode
+  forget_node        HttpRequestNode
+  if_remember_node   IfElseNode
+  remember_node      HttpRequestNode
+  answer_node        AnswerNode
+
+OK: every node passed its Dify schema model
+```
+
+LLM 节点运行时需要 `dify-plugin-daemon-slim` 二进制（只在 Dify 部署内存在），脚本用桩替换它，
+但 `LLMNodeData.model_validate` 仍然执行，所以 schema 校验是真实的。故意写错字段会返回退出码 1。
 
 恢复初始状态：
 
