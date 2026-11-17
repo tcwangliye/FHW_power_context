@@ -81,16 +81,78 @@ _STOP = frozenset([
 _TOKEN = re.compile(r"[a-z]+|\d+|[\u3400-\u9fff]+")
 
 
+def _measure(word: str) -> int:
+    return len(re.findall(r"[aeiouy]+[^aeiouy]+", word))
+
+
+def _inflection(word: str) -> str:
+    if word.endswith("sses"):
+        word = word[:-2]
+    elif word.endswith("ies"):
+        word = word[:-3] + "i"
+    elif word.endswith("s") and not word.endswith(("ss", "us")):
+        word = word[:-1]
+    return word
+
+
+def _participle(word: str) -> str:
+    if word.endswith("eed"):
+        return word[:-1] if _measure(word[:-3]) > 0 else word
+    for ending in ("ingly", "edly", "ing", "ed"):
+        root = word[: -len(ending)]
+        if word.endswith(ending) and re.search(r"[aeiouy]", root):
+            if root.endswith(("at", "bl", "iz")):
+                return root + "e"
+            if len(root) > 2 and root[-1] == root[-2] and root[-1] not in "aeiouylsz":
+                return root[:-1]
+            return root
+    return word
+
+
+def stem_term(word: str) -> str:
+    """Normalize English inflection without changing stored evidence text."""
+    if not word.isascii() or not word.isalpha() or len(word) < 4:
+        return word
+    word = _participle(_inflection(word))
+    if word.endswith("y") and re.search(r"[aeiou]", word[:-1]):
+        word = word[:-1] + "i"
+    for ending, replacement in (
+        ("ational", "ate"),
+        ("tional", "tion"),
+        ("enci", "ence"),
+        ("anci", "ance"),
+        ("izer", "ize"),
+        ("ization", "ize"),
+        ("ation", "ate"),
+        ("ator", "ate"),
+        ("alism", "al"),
+        ("iveness", "ive"),
+        ("fulness", "ful"),
+        ("ousness", "ous"),
+        ("aliti", "al"),
+        ("iviti", "ive"),
+        ("biliti", "ble"),
+        ("icate", "ic"),
+        ("ative", ""),
+        ("alize", "al"),
+        ("iciti", "ic"),
+        ("ical", "ic"),
+        ("ness", ""),
+    ):
+        if word.endswith(ending) and _measure(word[: -len(ending)]) > 0:
+            word = word[: -len(ending)] + replacement
+            break
+    if word.endswith("ion") and word[:-3].endswith(("s", "t")) and _measure(word[:-3]) > 1:
+        word = word[:-3]
+    if word.endswith("e") and _measure(word[:-1]) > 1:
+        word = word[:-1]
+    return word
+
+
 def lexical_terms(text: str) -> list[str]:
     result = []
     for word in _TOKEN.findall(text.casefold()):
         if word in _STOP:
             continue
-        if len(word) > 5 and word.endswith("ies"):
-            word = word[:-3] + "y"
-        elif len(word) > 5 and word.endswith("ing"):
-            word = word[:-3]
-        elif len(word) > 4 and word.endswith("s") and not word.endswith("ss"):
-            word = word[:-1]
-        result.append(word)
+        result.append(stem_term(word))
     return result
