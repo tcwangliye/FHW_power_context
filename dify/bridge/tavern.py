@@ -13,7 +13,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
-from powercontext import MemoryEntry, PowerContextClient, PowerContextError
+from pc_client import MemoryEntry, PowerContextClient, PowerContextError
 
 MAX_REMEMBER_ITEMS = 6
 MAX_TEXT_BYTES = 4096

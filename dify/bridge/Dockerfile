@@ -7,7 +7,7 @@ ENV PYTHONUNBUFFERED=1 \
     POWERCONTEXT_URL=http://lethe-powercontext:8000
 
 WORKDIR /app
-COPY app.py powercontext.py tavern.py ./
+COPY app.py pc_client.py tavern.py ./
 
 EXPOSE 8080
 

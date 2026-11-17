@@ -82,7 +82,7 @@ dify/
 │   └── lethe-tavern.chatflow.yml  # Chatflow 应用（唯一 DSL，无导入顺序问题）
 ├── bridge/                        # 配套后端（仅标准库，无第三方依赖）
 │   ├── app.py                     # HTTP 服务与路由
-│   ├── powercontext.py            # PowerContext HTTP 客户端
+│   ├── pc_client.py               # PowerContext HTTP 客户端
 │   ├── tavern.py                  # 记忆打包、遗忘匹配、重置
 │   ├── test_bridge.py             # 行为测试
 │   └── Dockerfile

@@ -14,7 +14,7 @@ import urllib.error
 import urllib.request
 from typing import Any
 
-from powercontext import MemoryEntry, PowerContextClient, PowerContextError
+from pc_client import MemoryEntry, PowerContextClient, PowerContextError
 from tavern import TavernService, render_memory_block, similarity
 
 

@@ -113,7 +113,7 @@ python scripts/verify_demo.py --mode bridge --player demo-lin
 | `docker compose logs lethe-bridge` | 每次 `/turn/*` 调用的入参、耗时，以及与 PowerContext 的往返 |
 | `docker compose logs lethe-powercontext` | Scope 创建、Memory 版本推进、条目停用 |
 
-一次真实的 bridge 模式运行结果（`evidence/run-20261117-200929/scenario.json`）：
+一次真实的 bridge 模式运行结果（`evidence/run-20261117-201204/scenario.json`）：
 
 | 步骤 | 判定 |
 | --- | --- |

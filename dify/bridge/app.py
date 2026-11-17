@@ -25,7 +25,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
-from powercontext import PowerContextClient, PowerContextError
+from pc_client import PowerContextClient, PowerContextError
 from tavern import TavernService
 
 MAX_BODY_BYTES = 256 * 1024
