@@ -1,0 +1,516 @@
+app:
+  description: 忘川酒馆 —— 会记住你、也能被你要求忘记的酒馆掌柜。
+  icon: 🍶
+  icon_background: '#F3E8D8'
+  icon_type: emoji
+  mode: advanced-chat
+  name: 忘川酒馆
+  use_icon_as_answer_icon: false
+dependencies:
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: langgenius/openai_api_compatible:0.0.84@e9731496bc4713033b1b404649598497232745fd12dbc665fc7481704f55dce8
+kind: app
+version: 0.7.0
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      enabled: false
+    opening_statement: |
+      忘川河边只有这么一间还亮着灯的酒馆。
+      掌柜阿忘把杯子推过来，抬眼看了看你：「又是你？坐吧。今天想喝点什么，还是……想把什么忘了？」
+    retriever_resource:
+      enabled: false
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions:
+    - 你还记得我上次干了什么吗？
+    - 我叫小林，不吃香菜，酒要温的。
+    - 把打翻酒杯那件事忘了吧。
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+  graph:
+    edges:
+    - data: {isInIteration: false, isInLoop: false, sourceType: start, targetType: code}
+      id: e-start-input
+      source: start_node
+      sourceHandle: source
+      target: input_node
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data: {isInIteration: false, isInLoop: false, sourceType: code, targetType: http-request}
+      id: e-input-context
+      source: input_node
+      sourceHandle: source
+      target: context_node
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data: {isInIteration: false, isInLoop: false, sourceType: http-request, targetType: code}
+      id: e-context-prepare
+      source: context_node
+      sourceHandle: source
+      target: prepare_node
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data: {isInIteration: false, isInLoop: false, sourceType: code, targetType: llm}
+      id: e-prepare-llm
+      source: prepare_node
+      sourceHandle: source
+      target: npc_node
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data: {isInIteration: false, isInLoop: false, sourceType: llm, targetType: code}
+      id: e-llm-parse
+      source: npc_node
+      sourceHandle: source
+      target: parse_node
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data: {isInIteration: false, isInLoop: false, sourceType: code, targetType: if-else}
+      id: e-parse-if-forget
+      source: parse_node
+      sourceHandle: source
+      target: if_forget_node
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data: {isInIteration: false, isInLoop: false, sourceType: if-else, targetType: http-request}
+      id: e-if-forget-true
+      source: if_forget_node
+      sourceHandle: 'true'
+      target: forget_node
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data: {isInIteration: false, isInLoop: false, sourceType: if-else, targetType: if-else}
+      id: e-if-forget-false
+      source: if_forget_node
+      sourceHandle: 'false'
+      target: if_remember_node
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data: {isInIteration: false, isInLoop: false, sourceType: http-request, targetType: if-else}
+      id: e-forget-remember
+      source: forget_node
+      sourceHandle: source
+      target: if_remember_node
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data: {isInIteration: false, isInLoop: false, sourceType: if-else, targetType: http-request}
+      id: e-if-remember-true
+      source: if_remember_node
+      sourceHandle: 'true'
+      target: remember_node
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data: {isInIteration: false, isInLoop: false, sourceType: http-request, targetType: answer}
+      id: e-remember-answer
+      source: remember_node
+      sourceHandle: source
+      target: answer_node
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data: {isInIteration: false, isInLoop: false, sourceType: if-else, targetType: answer}
+      id: e-if-remember-false
+      source: if_remember_node
+      sourceHandle: 'false'
+      target: answer_node
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    nodes:
+    - data:
+        desc: 玩家身份由 Dify 的 user 字段提供，同一浏览器会话保持一致
+        selected: false
+        title: 开始
+        type: start
+        variables: []
+      height: 90
+      id: start_node
+      position: {x: 40, y: 300}
+      positionAbsolute: {x: 40, y: 300}
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        code: |
+          import json
+
+
+          def main(player_id: str, utterance: str) -> dict:
+              return {
+                  "context_body": json.dumps(
+                      {"player_id": player_id, "utterance": utterance}, ensure_ascii=False
+                  )
+              }
+        code_language: python3
+        outputs:
+          context_body: {children: null, type: string}
+        selected: false
+        title: 组装请求
+        type: code
+        variables:
+        - value_selector: [sys, user_id]
+          value_type: string
+          variable: player_id
+        - value_selector: [sys, query]
+          value_type: string
+          variable: utterance
+      height: 90
+      id: input_node
+      position: {x: 340, y: 300}
+      positionAbsolute: {x: 340, y: 300}
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        authorization: {config: null, type: no-auth}
+        body:
+          type: json
+          data:
+          - id: context-body
+            key: ''
+            type: text
+            value: '{{#input_node.context_body#}}'
+            file: []
+        desc: 取回这名玩家在 PowerContext 里的全部记忆
+        headers: 'Content-Type: application/json'
+        method: post
+        params: ''
+        retry_config:
+          enabled: true
+          max_retries: 2
+          retry_interval: 1000
+          exponential_backoff: {enabled: false, multiplier: 2, max_interval: 10000}
+        selected: false
+        ssl_verify: false
+        timeout: {connect: 10, read: 30, write: 30}
+        title: 读取记忆
+        type: http-request
+        url: http://lethe-bridge:8080/turn/context
+        variables: []
+      height: 132
+      id: context_node
+      position: {x: 350, y: 300}
+      positionAbsolute: {x: 350, y: 300}
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        code: |
+          import json
+
+
+          def main(context_body: str) -> dict:
+              try:
+                  data = json.loads(context_body or "{}")
+              except Exception:
+                  data = {}
+              block = str(data.get("memory_block") or "").strip()
+              count = int(data.get("memory_count") or 0)
+              if not block:
+                  block = "（你还没见过这位客人，关于他/她你什么都不记得。）"
+              return {"memory_block": block, "memory_count": count}
+        code_language: python3
+        outputs:
+          memory_block: {children: null, type: string}
+          memory_count: {children: null, type: number}
+        selected: false
+        title: 整理记忆
+        type: code
+        variables:
+        - value_selector: [context_node, body]
+          value_type: string
+          variable: context_body
+      height: 90
+      id: prepare_node
+      position: {x: 660, y: 300}
+      positionAbsolute: {x: 660, y: 300}
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        context: {enabled: false, variable_selector: []}
+        desc: 阿忘按记忆说话，并在结尾追加一段机器可读的记忆指令
+        model:
+          completion_params: {temperature: 0.8}
+          mode: chat
+          name: lethe-npc
+          provider: langgenius/openai_api_compatible/openai_api_compatible
+        prompt_template:
+        - id: npc-system
+          role: system
+          text: |
+            你是「忘川酒馆」的掌柜，名叫阿忘。酒馆开在忘川河边，来的多是心里有事的人。
+
+            说话方式：
+            - 用中文，短句，一次三到五句，像真人聊天，不要念说明书
+            - 你有点懒散、嘴硬，但心是热的；偶尔打趣，不说客套话
+            - 不问「还有什么可以帮您」这类服务用语
+            - 不要复述设定，不要自称 AI
+
+            关于记忆的规则：
+            - 下面「你记得的事」是你对这位客人真实记得的内容，只能依据它
+            - 记得的事就自然地提起来，别一条条念出来；不记得就说不记得，绝不编造
+            - 客人告诉你的新信息（名字、口味、忌讳、发生过的事），要记住
+            - 客人明确说「忘了吧」「别记着」「把这件事抹掉」时，要答应，并写进遗忘列表
+            - 遗忘列表里填这件事的关键词，尽量沿用你记忆里已有的说法，便于检索到
+            - 不要一次记住超过 3 件事，只记值得记的
+
+            你记得的事：
+            {{#prepare_node.memory_block#}}
+
+            输出格式（必须遵守）：
+            第一段写你的台词。
+            然后另起一行输出 <<<MEMORY>>>，再另起一行输出一个 JSON 对象：
+            {"remember":[{"kind":"preference|event|identity|promise","text":"以阿忘的口吻记录的一件事实"}],"forget":["要被遗忘的那件事"]}
+
+            没有要记的就给空数组。JSON 必须写成一行，且只能是合法 JSON。
+        selected: false
+        title: 阿忘
+        type: llm
+        vision: {enabled: false}
+      height: 98
+      id: npc_node
+      position: {x: 970, y: 300}
+      positionAbsolute: {x: 970, y: 300}
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        code: |
+          import json
+
+          MARKER = "<<<MEMORY>>>"
+          FALLBACK = "……阿忘擦了擦杯子，没接话。"
+
+
+          def main(raw: str, player_id: str) -> dict:
+              text = raw or ""
+              reply = text
+              remember = []
+              forget = []
+
+              if MARKER in text:
+                  head, _, tail = text.partition(MARKER)
+                  reply = head.strip()
+                  payload = {}
+                  try:
+                      payload = json.loads(tail.strip())
+                  except Exception:
+                      payload = {}
+                  if isinstance(payload, dict):
+                      for item in payload.get("remember") or []:
+                          if isinstance(item, dict):
+                              value = str(item.get("text") or "").strip()
+                              if value:
+                                  remember.append({
+                                      "kind": str(item.get("kind") or "note"),
+                                      "text": value,
+                                      "reason": "阿忘在对话中记住",
+                                  })
+                      for item in payload.get("forget") or []:
+                          value = str(item or "").strip()
+                          if value:
+                              forget.append(value)
+
+              reply = reply.strip() or FALLBACK
+              remember = remember[:3]
+              forget = forget[:3]
+
+              return {
+                  "reply": reply,
+                  "remember_body": json.dumps({"player_id": player_id, "memories": remember}, ensure_ascii=False),
+                  "forget_body": json.dumps({"player_id": player_id, "targets": forget}, ensure_ascii=False),
+                  "remember_count": len(remember),
+                  "forget_count": len(forget),
+              }
+        code_language: python3
+        outputs:
+          reply: {children: null, type: string}
+          remember_body: {children: null, type: string}
+          forget_body: {children: null, type: string}
+          remember_count: {children: null, type: number}
+          forget_count: {children: null, type: number}
+        selected: false
+        title: 解析记忆指令
+        type: code
+        variables:
+        - value_selector: [npc_node, text]
+          value_type: string
+          variable: raw
+        - value_selector: [sys, user_id]
+          value_type: string
+          variable: player_id
+      height: 90
+      id: parse_node
+      position: {x: 1280, y: 300}
+      positionAbsolute: {x: 1280, y: 300}
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        cases:
+        - case_id: 'true'
+          conditions:
+          - comparison_operator: '>'
+            id: cond-forget
+            value: '0'
+            varType: number
+            variable_selector: [parse_node, forget_count]
+          id: 'true'
+          logical_operator: and
+        selected: false
+        title: 要遗忘吗
+        type: if-else
+      height: 124
+      id: if_forget_node
+      position: {x: 1590, y: 300}
+      positionAbsolute: {x: 1590, y: 300}
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        authorization: {config: null, type: no-auth}
+        body:
+          type: json
+          data:
+          - id: forget-body
+            key: ''
+            type: text
+            value: '{{#parse_node.forget_body#}}'
+            file: []
+        desc: 停用玩家要求忘掉的那几条记忆
+        headers: 'Content-Type: application/json'
+        method: post
+        params: ''
+        retry_config:
+          enabled: true
+          max_retries: 2
+          retry_interval: 1000
+          exponential_backoff: {enabled: false, multiplier: 2, max_interval: 10000}
+        selected: false
+        ssl_verify: false
+        timeout: {connect: 10, read: 30, write: 30}
+        title: 执行遗忘
+        type: http-request
+        url: http://lethe-bridge:8080/turn/forget
+        variables: []
+      height: 132
+      id: forget_node
+      position: {x: 1900, y: 180}
+      positionAbsolute: {x: 1900, y: 180}
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        cases:
+        - case_id: 'true'
+          conditions:
+          - comparison_operator: '>'
+            id: cond-remember
+            value: '0'
+            varType: number
+            variable_selector: [parse_node, remember_count]
+          id: 'true'
+          logical_operator: and
+        selected: false
+        title: 要记住吗
+        type: if-else
+      height: 124
+      id: if_remember_node
+      position: {x: 2210, y: 300}
+      positionAbsolute: {x: 2210, y: 300}
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        authorization: {config: null, type: no-auth}
+        body:
+          type: json
+          data:
+          - id: remember-body
+            key: ''
+            type: text
+            value: '{{#parse_node.remember_body#}}'
+            file: []
+        desc: 把这轮值得记的事写入 PowerContext
+        headers: 'Content-Type: application/json'
+        method: post
+        params: ''
+        retry_config:
+          enabled: true
+          max_retries: 2
+          retry_interval: 1000
+          exponential_backoff: {enabled: false, multiplier: 2, max_interval: 10000}
+        selected: false
+        ssl_verify: false
+        timeout: {connect: 10, read: 30, write: 30}
+        title: 写入记忆
+        type: http-request
+        url: http://lethe-bridge:8080/turn/remember
+        variables: []
+      height: 132
+      id: remember_node
+      position: {x: 2520, y: 300}
+      positionAbsolute: {x: 2520, y: 300}
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        answer: '{{#parse_node.reply#}}'
+        desc: ''
+        selected: false
+        title: 阿忘的回答
+        type: answer
+        variables: []
+      height: 106
+      id: answer_node
+      position: {x: 2830, y: 300}
+      positionAbsolute: {x: 2830, y: 300}
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    viewport:
+      x: 0
+      y: 0
+      zoom: 0.5
+  rag_pipeline_variables: []

@@ -1,0 +1,165 @@
+{
+  "steps": [
+    {
+      "step": 1,
+      "name": "reset",
+      "request": {
+        "player": "demo-lin"
+      },
+      "response": {
+        "player_id": "demo-lin",
+        "scope_id": "scp_5j2723j744aehkpqp77mv0rqr5",
+        "retired_count": 3,
+        "retired": [
+          "mem_ent_001ab968de094a0b8758f8bd3d18f078",
+          "mem_ent_664f49f04e79437d8498050d0fb012a3",
+          "mem_ent_b6d00fcf10ad4056b787e46cbbaad0ec"
+        ]
+      },
+      "at": "2026-11-17T12:12:04+00:00"
+    },
+    {
+      "step": 2,
+      "name": "step1-introduce",
+      "request": {
+        "conversation": "A",
+        "utterance": "我叫小林，不吃香菜，酒要温的。"
+      },
+      "response": {
+        "answer": "- （偏好）小林喜欢温过的酒\n- （偏好）小林不吃香菜\n- （身份）小林，是常来的客人",
+        "conversation_id": "bridge"
+      },
+      "at": "2026-11-17T12:12:05+00:00",
+      "memories": [
+        {
+          "entry_id": "mem_ent_502f0d4871674205bfdb194b859948a0",
+          "kind": "preference",
+          "text": "小林不吃香菜"
+        },
+        {
+          "entry_id": "mem_ent_6ed6ad97ab244caeb64c32be15013cf3",
+          "kind": "identity",
+          "text": "小林，是常来的客人"
+        },
+        {
+          "entry_id": "mem_ent_787c8b897ef145e4abc9d3e0fc01683b",
+          "kind": "preference",
+          "text": "小林喜欢温过的酒"
+        }
+      ]
+    },
+    {
+      "step": 3,
+      "name": "step2-mischief",
+      "request": {
+        "conversation": "A",
+        "utterance": "我把你的酒杯打翻了，哈哈。"
+      },
+      "response": {
+        "answer": "- （偏好）小林喜欢温过的酒\n- （身份）小林，是常来的客人\n- （偏好）小林不吃香菜",
+        "conversation_id": "bridge"
+      },
+      "at": "2026-11-17T12:12:05+00:00",
+      "memories": [
+        {
+          "entry_id": "mem_ent_502f0d4871674205bfdb194b859948a0",
+          "kind": "preference",
+          "text": "小林不吃香菜"
+        },
+        {
+          "entry_id": "mem_ent_6ed6ad97ab244caeb64c32be15013cf3",
+          "kind": "identity",
+          "text": "小林，是常来的客人"
+        },
+        {
+          "entry_id": "mem_ent_787c8b897ef145e4abc9d3e0fc01683b",
+          "kind": "preference",
+          "text": "小林喜欢温过的酒"
+        },
+        {
+          "entry_id": "mem_ent_f45feb4f857746dda633a26c50942608",
+          "kind": "event",
+          "text": "小林把酒杯打翻了还笑着说手滑"
+        }
+      ]
+    },
+    {
+      "step": 4,
+      "name": "step3-new-session-recall",
+      "request": {
+        "conversation": "B",
+        "utterance": "你还记得我吗？我上次干过什么？"
+      },
+      "response": {
+        "answer": "- （往事）小林把酒杯打翻了还笑着说手滑\n- （偏好）小林喜欢温过的酒\n- （身份）小林，是常来的客人\n- （偏好）小林不吃香菜",
+        "conversation_id": "bridge"
+      },
+      "at": "2026-11-17T12:12:05+00:00"
+    },
+    {
+      "step": 5,
+      "name": "step4-forget",
+      "request": {
+        "conversation": "B",
+        "targets": [
+          "打翻酒杯"
+        ]
+      },
+      "response": {
+        "answer": "",
+        "player_id": "demo-lin",
+        "scope_id": "scp_5j2723j744aehkpqp77mv0rqr5",
+        "retired": [
+          {
+            "target": "打翻酒杯",
+            "entry_id": "mem_ent_f45feb4f857746dda633a26c50942608",
+            "kind": "event",
+            "text": "小林把酒杯打翻了还笑着说手滑"
+          }
+        ],
+        "retired_count": 1,
+        "unmatched": []
+      },
+      "at": "2026-11-17T12:12:05+00:00"
+    },
+    {
+      "step": 6,
+      "name": "step5-new-session-after-forget",
+      "request": {
+        "conversation": "C",
+        "utterance": "我上次在你店里干过什么坏事吗？"
+      },
+      "response": {
+        "answer": "- （偏好）小林喜欢温过的酒\n- （身份）小林，是常来的客人\n- （偏好）小林不吃香菜",
+        "conversation_id": "bridge"
+      },
+      "at": "2026-11-17T12:12:06+00:00"
+    },
+    {
+      "step": 7,
+      "name": "final-memory-state",
+      "request": {},
+      "response": {
+        "memories": [
+          {
+            "entry_id": "mem_ent_502f0d4871674205bfdb194b859948a0",
+            "kind": "preference",
+            "text": "小林不吃香菜"
+          },
+          {
+            "entry_id": "mem_ent_6ed6ad97ab244caeb64c32be15013cf3",
+            "kind": "identity",
+            "text": "小林，是常来的客人"
+          },
+          {
+            "entry_id": "mem_ent_787c8b897ef145e4abc9d3e0fc01683b",
+            "kind": "preference",
+            "text": "小林喜欢温过的酒"
+          }
+        ]
+      },
+      "at": "2026-11-17T12:12:06+00:00"
+    }
+  ],
+  "failures": []
+}

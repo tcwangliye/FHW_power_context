@@ -1,0 +1,59 @@
+# Overlay for the official Dify compose file.
+#
+# Run from the Dify checkout's docker/ directory so the default network is the
+# one Dify's api, worker and plugin daemon already join:
+#
+#   docker compose \
+#     -f docker-compose.yaml \
+#     -f <repo>/dify/deploy/docker-compose.lethe.yaml \
+#     up -d
+#
+# The default network subnet is pinned so that SSRF_PROXY_ALLOW_PRIVATE_IPS can
+# name a deterministic range instead of guessing Docker's automatic 172.17-31
+# assignment.
+services:
+  lethe-powercontext:
+    build:
+      context: ..
+      dockerfile: deploy/powercontext.Dockerfile
+    restart: unless-stopped
+    environment:
+      POWERCONTEXT_HOME: /data
+    volumes:
+      - lethe-powercontext-data:/data
+    ports:
+      # Loopback only: the bridge is the intended client, this is for inspection.
+      - "127.0.0.1:${LETHE_POWERCONTEXT_PORT:-18000}:8000"
+    healthcheck:
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 12
+
+  lethe-bridge:
+    build:
+      context: ../bridge
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      POWERCONTEXT_URL: http://lethe-powercontext:8000
+      LETHE_MEMORY_LIMIT: "24"
+      LETHE_MEMORY_CHARS: "4000"
+      LETHE_LOG_LEVEL: INFO
+    depends_on:
+      lethe-powercontext:
+        condition: service_healthy
+    healthcheck:
+      interval: 10s
+      timeout: 5s
+      start_period: 10s
+      retries: 6
+
+volumes:
+  lethe-powercontext-data:
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: ${LETHE_DOCKER_SUBNET:-172.28.0.0/16}
