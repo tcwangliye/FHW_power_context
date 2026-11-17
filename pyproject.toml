@@ -188,6 +188,8 @@ exclude = [
     "tests/langgraph_adapter",
     "tests/e2e/test_langgraph_chain.py",
     "evaluation",
+    # Competition ecosystem assets are standalone services, not part of the package.
+    "dify",
 ]
 
 [tool.ty.rules]
@@ -217,6 +219,8 @@ markers = [
 target-version = "py311"
 line-length = 120
 fix = true
+# Competition ecosystem assets carry their own settings in dify/ruff.toml.
+exclude = ["dify"]
 
 [tool.ruff.lint]
 select = [
