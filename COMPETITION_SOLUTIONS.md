@@ -1,89 +1,75 @@
-# PowerContext 2026 competition implementations
+# PowerContext competition implementations
 
-This branch implements all ten product code tasks on the official
-`2026-competition` branch, retaining the frozen baseline
-`9db1753434162c0aa7c9f1189a1722e617880a52` in its Git history.
+Repository: `https://github.com/tcwangliye/FHW_power_context.git`
 
-| Task | Implementation |
+Branch: `2026-competition`
+
+Frozen baseline: `9db1753434162c0aa7c9f1189a1722e617880a52`
+
+| Task | Product implementation |
 | --- | --- |
-| `source-01-table-evidence` | Lossless CSV row Sources and citation readback |
-| `source-02-pi-history` | Visible Pi branch events, immutable records, durable connector checkpoints |
-| `source-03-pdf-retrieval` | Complete physical PDF pages, revision identities, raw-word FTS, financial heading reranking and real page continuations |
-| `retrieval-01-reranking` | Strict batched HTTP scoring and global stable selection |
-| `context-02-incremental-pack` | Canonical UTF-8/Base64 packs, verified prefix deltas and native prepare integration |
-| `processing-01-count-trigger` | Strict optional journal-count admission using the native supervisor and workers |
-| `memory-02-embedding-batches` | Concurrent request sharing, cancellation isolation, bounded LRU and batch usage |
-| `memory-01-source-lifecycle` | Durable scope-local dependency DAGs, retryable native Memory state transitions, Topic filtering |
-| `context-01-evidence-selection` | Query-aware empirical sentence windows, scientific identifier protection, exact origins and complete UTF-8 budget accounting |
-| `retrieval-02-hybrid-search` | One native UNION statement for bounded FTS/vector candidates and current references |
+| CSV | Lossless row Sources and original-record readback |
+| Pi history | Branch ancestry, complete events and durable checkpoints |
+| PDF retrieval | All physical pages, immutable Sources, stored-page ranking and exact citations |
+| HTTP reranking | Strict response validation, batching and stable global ordering |
+| Incremental context | Bounded UTF-8/Base64 deltas and complete reconstruction |
+| Count trigger | Durable new-source counting and native worker admission |
+| Embeddings | Concurrent batching, cancellation isolation and bounded caching |
+| Source lifecycle | Persistent dependencies, native deactivation and recovery |
+| Evidence selection | Query-directed literal windows with precise offsets and full output budgeting |
+| Hybrid search | One bounded SQL query for full-text and vector candidates |
 
-Original Source evidence remains complete and independently readable. Retrieval
-uses actual product persistence and public Memory paths. Implementations do not
-read grading labels or precomputed answers and require no online model service.
+## PDF retrieval
 
-## Validation
+Pages are parsed from the complete original PDF and stored through the public
+Source/Runtime/Memory path. Ranking combines native full-text search with all
+active PDF entries returned by the public Memory listing API. This prevents a
+global top-100 candidate cutoff from excluding a report's evidence. Company
+names in document IDs are matched across punctuation and digits; explicit
+company queries prioritize that company's reports. Financial concepts include
+cashflow, margins, capital intensity and segment performance. Short financial
+headings may contain units. Continuations use actual stored neighboring page
+citations, with duplicate physical document/revision/page identities removed.
 
-Use the unchanged Python 3.12 environment in `competition/README.md`:
+The complete stored-page scan is linear in the collection size. It is intended
+for report collections at the competition scale, not an unmeasured scalability
+claim for arbitrarily large libraries.
+
+## Evidence selection
+
+The selector preserves exact source text, Python character offsets, scope and
+revision identities. The trust policy, envelope, JSON, citations and text all
+count toward the UTF-8 byte budget. Oversized sentences receive local query
+windows even when a short introduction also matches the query; introductory
+matches cannot suppress evidence near the end of a longer result sentence.
+Ordinary context preparation remains the default.
+
+## Verification
+
+Run the unchanged official suites using the fixed competition dependencies:
 
 ```bash
-make -C competition install
-make -C competition check-baseline
-make -C competition test
+make -C competition docker-test
 ```
 
-The ten unchanged public suites pass 95 tests in the official container
-configuration: one CPU, 2 GiB memory, no external network, and read-only
-source/test mounts. Additional tests cover Unicode pack reconstruction,
-malformed wire data, long Pi output persistence, exact evidence intervals,
-and restart/retry after actual native storage failures. Related product tests
-exercise the original prepared-context behavior and Topic persistence.
-Modified files pass Ruff 0.15.7 lint/format and `git diff --check`.
+The ten public suites pass 95 tests. Related product regression suites pass
+85 tests, including multi-report company matching after restart, duplicate-page
+citations, and long result sentences following matching introductions. These
+three defect scenarios fail on the previous product submission.
 
-Independent external scoring of the five public PepsiCo questions finds all
-eight annotated evidence pages at limit 20 (Recall@20 = 1.00, compared with 0.50
-on the original submission). The minimum evidence token recall is 0.9962 and
-minimum annotated full-page token F1 is 0.9793. This measures the public report;
-it does not establish the hidden reports' page coverage or retrieval quality.
+Independent diagnostics use original public FinanceBench PDFs and SciFact TRAIN
+abstracts. Candidate processes receive only original inputs, queries and
+budgets; annotation scoring runs separately. Three additional reports contain
+467 pages and six questions. A separate sample contains 120 previously unused
+training claims, three abstracts per claim and both 1,400/1,800-byte budgets;
+every candidate is stored through the real Memory API. These developer checks
+are not official competition results.
 
-A separate SciFact **training** sample has 63 claims, three original abstracts
-per claim, and both 1,400/1,800-byte budgets. Its 64-request validation partition
-has mean evidence token recall 0.7598 and complete evidence coverage 0.6719
-(original submission: 0.6213 and 0.5313). The other 62 requests are development
-data. The validation partition was inspected during diagnosis, so these are
-local diagnostic measurements, not an untouched benchmark or official result.
-Every candidate runs offline with read-only source and receives only the query,
-budget and original texts; annotation scoring runs separately on the host.
-The prepared-candidate measurement supplies all three real stored Memory hits,
-as required by the selection contract.
+Changed Python files pass Ruff lint/format and focused type checking. Full
+pre-commit runs retain repository-wide type diagnostics; this is not reported
+as a clean full-repository check. Official tests, data and dependency files
+are unchanged in the submission.
 
-Five focused regression tests cover decimal statistics, empirical results versus
-repeated objectives, distinct scientific identifiers, stable candidate ties,
-financial headings, original FTS word forms and real adjacent-page citations.
-Four reproduce failures on the original submission. They and the related
-prepared-context/edge tests pass 83 tests in the fixed dependency image.
-
-One existing SQLite Topic-vector profile-filter test also fails on the unchanged
-original submission in the same fixed environment; it is not reported as passing.
-A broader configuration test requires `typer`, which is absent from the fixed
-competition dependencies. Repository-wide `uv run --locked --python 3.12 prek
-run -a` fails its type-check hook because the configured `./.venv` lacks the
-dependencies installed in the separate checking environment. Its unrelated
-format edits to official competition files have been restored byte for byte;
-the official assets and dependency files remain unchanged.
-Ruff and focused type checks pass for all five modified Python files using
-`ty check --python` with the complete separate checking environment.
-
-An independent native 40-round replay reconstructs every context and measures
-all protocol bytes, including the first full pack, Base64 and digests. It is a
-local diagnostic workload, not the official QMSum scoring workload.
-
-Public tests do not establish private FinanceBench/SciFact quality thresholds,
-the official incremental cost result, or awarded competition points. Those
-checks still require platform evaluation.
-
-## Submission
-
-Use `https://github.com/tcwangliye/FHW_power_context.git`, branch
-`2026-competition`, and the exact published commit. The same commit implements
-all ten code tasks. Repository preparation is verified separately through the
-retained baseline history; upstream PRs are not required for these code tasks.
+Submit the repository URL, branch and complete published commit for each
+selected task. Official points require the authenticated competition platform
+to rerun all functional and quality gates.

@@ -70,3 +70,14 @@ def test_equal_relevance_preserves_candidate_order_across_opaque_ids():
     text = "The cobalt sensor has an experimentally confirmed threshold of 73 degrees. " * 3
     result = _select("cobalt sensor threshold", [("zzz", text), ("aaa", text)], max_bytes=900)
     assert result.fragments[0].address.entry_id == "zzz"
+
+
+def test_long_result_sentence_is_considered_even_when_short_introduction_fits():
+    text = (
+        "The cobalt sensor threshold needs evaluation. "
+        + "We measured "
+        + "ordinary ambient conditions " * 150
+        + "and found the cobalt sensor threshold was 73 degrees in repeated experiments."
+    )
+    result = _select("cobalt sensor threshold", [("measurement", text)], max_bytes=950)
+    assert any("73 degrees" in fragment.text for fragment in result.fragments)

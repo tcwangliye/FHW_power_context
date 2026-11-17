@@ -19,6 +19,7 @@ from __future__ import annotations
 import hashlib
 import io
 import math
+import re
 from collections import Counter
 
 from pydantic import BaseModel, Field, field_validator
@@ -145,6 +146,16 @@ _QUESTION_NOISE = frozenset([
     "primarily",
     "important",
     "ongoing",
+    "useful",
+    "metric",
+    "company",
+    "like",
+    "please",
+    "explain",
+    "why",
+    "data",
+    "based",
+    "profile",
 ])
 _FINANCIAL_CONCEPTS = (
     (
@@ -158,8 +169,8 @@ _FINANCIAL_CONCEPTS = (
         ("legal proceedings", "litigation"),
     ),
     (
-        frozenset({"income", "earnings", "ebitda", "profit"}),
-        ("income", "profit", "earnings"),
+        frozenset({"income", "earnings", "ebitda", "profit", "margin", "revenue", "sales", "growth", "intensive"}),
+        ("income", "profit", "earnings", "revenue", "sales", "operating"),
         (
             "statement of income",
             "statements of income",
@@ -169,21 +180,35 @@ _FINANCIAL_CONCEPTS = (
         ),
     ),
     (
-        frozenset({"cash", "flows", "flow", "capex", "depreciation", "amortization", "ebitda"}),
+        frozenset({
+            "cash",
+            "cashflow",
+            "cashflows",
+            "flows",
+            "flow",
+            "capex",
+            "depreciation",
+            "amortization",
+            "ebitda",
+            "intensive",
+        }),
         ("cash", "flows", "depreciation", "amortization", "expenditures"),
         ("statement of cash flows", "statements of cash flows", "cash flow statement"),
     ),
     (
-        frozenset({"balance", "assets", "liabilities", "equity"}),
+        frozenset({"balance", "assets", "liabilities", "equity", "debt", "intensive"}),
         ("assets", "liabilities", "equity"),
         ("balance sheet", "balance sheets", "financial position"),
+    ),
+    (
+        frozenset({"segment", "segments", "growth", "margin"}),
+        ("segment", "organic", "sales", "operating", "margin"),
+        ("segment results", "segment performance", "results of operations", "operating results"),
     ),
 )
 
 
 def _query_plan(question: str):
-    import re
-
     from powercontext.builtin.evidence.lexical import lexical_terms
 
     words = re.findall(r"[a-z]+|\d+", question.casefold())
@@ -199,16 +224,12 @@ def _query_plan(question: str):
     # turn a query into stems that are absent from the stored index.
     queries = [question]
     queries.extend(" ".join(alias[:2]) for _, alias, _ in concepts)
-    queries.extend(alias for _, aliases, headings in concepts for alias in (*aliases, *headings))
-    queries.extend(meaningful)
     queries.extend(" ".join(meaningful[offset : offset + 4]) for offset in range(0, len(meaningful), 4))
     terms = set(lexical_terms(" ".join(word for word in words if word not in _QUESTION_NOISE)))
     return tuple(dict.fromkeys(query for query in queries if query)), terms, concepts
 
 
-def _rank_pages(documents, query_terms, concepts, question: str):
-    import re
-
+def _rank_pages(documents, query_terms, concepts):
     from powercontext.builtin.evidence.lexical import lexical_terms
 
     bodies = [hit.text.partition("\n")[2] or hit.text for hit in documents]
@@ -216,7 +237,6 @@ def _rank_pages(documents, query_terms, concepts, question: str):
     lengths = [sum(count.values()) for count in counts]
     average = sum(lengths) / max(len(lengths), 1) or 1
     frequencies = Counter(term for count in counts for term in set(count))
-    question_words = set(re.findall(r"[a-z]+|\d+", question.casefold()))
 
     def relevance(index):
         count = counts[index]
@@ -233,21 +253,27 @@ def _rank_pages(documents, query_terms, concepts, question: str):
         )
         for _, aliases, headings in concepts:
             if not contents_page and any(
-                title in line and len(line.split()) <= len(title.split()) + 2 for line in lines for title in headings
+                title in line and len(line.split()) <= len(title.split()) + 6 for line in lines for title in headings
             ):
                 score += 25.0
             alias_terms = set(lexical_terms(" ".join(aliases)))
             score += min(3.0, sum(0.5 for term in alias_terms if count[term]))
-        metadata = documents[index].text.partition("\n")[0]
-        metadata_words = set(re.findall(r"[a-z]+|\d+", metadata.casefold()))
-        named = {
-            word for word in metadata_words if word.isalpha() and len(word) > 2 and word not in {"annual", "report"}
-        }
-        if named and named.intersection(question_words):
-            score *= 1.5
         return score * (0.15 if contents_page else 1.0)
 
     return sorted(range(len(documents)), key=lambda index: (-relevance(index), index))
+
+
+def _matching_documents(documents, question):
+    compact_query = re.sub(r"[^a-z0-9]", "", question.casefold())
+    named = []
+    for document in documents:
+        identity = document.text.partition("\n")[0].casefold()
+        company = re.split(r"(?:19|20)\d{2}", identity, maxsplit=1)[0]
+        company = re.sub(r"\b(?:annual|report|form)\b", "", company)
+        company = re.sub(r"[^a-z0-9]", "", company)
+        if len(company) >= 2 and company in compact_query:
+            named.append(document)
+    return named or documents
 
 
 def _page_locations(reference):
@@ -270,7 +296,7 @@ def _neighbors(anchors, records, limit):
             if record is None:
                 continue
             for prefix, number in _page_locations(record.entry):
-                for neighbor in (number - radius, number + radius):
+                for neighbor in (number + radius, number - radius):
                     adjacent = by_page.get((prefix, neighbor))
                     if adjacent is not None:
                         yield adjacent.citation
@@ -279,18 +305,20 @@ def _neighbors(anchors, records, limit):
 def _select_pages(anchors, records, limit):
     selected = []
     seen = set()
+    by_entry = {record.entry.entry_id: _page_locations(record.entry) for record in records.entries}
     primary = min(len(anchors), max(1, limit // 2))
     for citation in (*anchors[:primary], *_neighbors(anchors, records, limit), *anchors[primary:]):
-        key = (citation.memory_ref.artifact_id, citation.entry_id, citation.entry_version_id)
-        if key not in seen:
+        locations = by_entry.get(citation.entry_id, ())
+        if locations and not any(location in seen for location in locations):
             selected.append(citation)
-            seen.add(key)
+            seen.update(locations)
         if len(selected) == limit:
             break
     return tuple(selected)
 
 
 async def search_pdf_pages(memory, question: str, limit: int = 10) -> tuple[MemoryCitation, ...]:
+    from powercontext.builtin.artifacts.memory import MemoryHit
     from powercontext.builtin.runtime.models import SearchMemoryRequest
 
     if type(limit) is not int or limit < 1:
@@ -304,8 +332,24 @@ async def search_pdf_pages(memory, question: str, limit: int = 10) -> tuple[Memo
         for hit in page.hits:
             key = (hit.memory_ref.artifact_id, hit.entry_id, hit.entry_version_id)
             candidates.setdefault(key, hit)
-    documents = list(candidates.values())
-    order = _rank_pages(documents, terms, concepts, question)
+    records = await memory.list()
+    pdf_entries = set()
+    for record in records.entries:
+        if not _page_locations(record.entry):
+            continue
+        citation = record.citation
+        key = (citation.memory_ref.artifact_id, citation.entry_id, citation.entry_version_id)
+        pdf_entries.add(key)
+        candidates[key] = MemoryHit(
+            memory_ref=citation.memory_ref,
+            entry_id=citation.entry_id,
+            entry_version_id=citation.entry_version_id,
+            text=record.entry.text,
+            score=0.0,
+            matched_by=(),
+        )
+    documents = _matching_documents([hit for key, hit in candidates.items() if key in pdf_entries], question)
+    order = _rank_pages(documents, terms, concepts)
     anchors = [
         MemoryCitation(
             memory_ref=documents[index].memory_ref,
@@ -318,7 +362,7 @@ async def search_pdf_pages(memory, question: str, limit: int = 10) -> tuple[Memo
         return ()
     # Tables and narrative sections often continue across physical page breaks.
     # Use current stored identities to find neighbors of the strongest matches.
-    return _select_pages(anchors, await memory.list(), limit)
+    return _select_pages(anchors, records, limit)
 
 
 __all__ = ["PDF_PAGE_SOURCE_DEFINITION", "PDFDocumentInput", "PDFPageInput", "parse_pdf_document", "search_pdf_pages"]

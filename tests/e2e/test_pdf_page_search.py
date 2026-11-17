@@ -30,6 +30,12 @@ class _PagePipeline:
         )
 
 
+class _RepeatedPagePipeline(_PagePipeline):
+    async def extract(self, request, /):
+        entries = await super().extract(request)
+        return (*entries, *(entry.model_copy(update={"kind": "page-copy"}) for entry in entries))
+
+
 def test_financial_heading_continuation_and_original_fts_word_forms():
     async def scenario():
         bodies = (
@@ -55,7 +61,7 @@ def test_financial_heading_continuation_and_original_fts_word_forms():
         for source in sources:
             assert isinstance(source, PDFPageSource)
             page_by_source[source.name] = source.page_number
-        async with open_builtin_runtime(BuiltinConfig(), candidate_pipeline=_PagePipeline()) as runtime:
+        async with open_builtin_runtime(BuiltinConfig(), candidate_pipeline=_RepeatedPagePipeline()) as runtime:
             assert runtime.scopes is not None
             scope = await runtime.scopes.create(
                 ScopeDraft(title="Report", summary="Stored pages", idempotency_key="pages")
@@ -82,5 +88,55 @@ def test_financial_heading_continuation_and_original_fts_word_forms():
 
             assert await locations("NORTHCORP statement of cash flows", 2) == [1, 2]
             assert await locations("Which page describes restructuring costs?", 1) == [4]
+            found = await locations("NORTHCORP statement of cash flows", 10)
+            assert len(found) == len(set(found))
+
+    asyncio.run(scenario())
+
+
+def test_company_identity_and_cashflow_question_in_a_multi_report_collection(tmp_path):
+    from powercontext.builtin.persistence.sqlite import SQLiteConfig
+
+    async def scenario():
+        registry = SourceDefinitionRegistry((PDF_PAGE_SOURCE_DEFINITION,))
+        config = BuiltinConfig(database=SQLiteConfig(url=f"sqlite+aiosqlite:///{tmp_path / 'reports.db'}"))
+        cases = []
+        for index in range(22):
+            cases.extend((
+                (f"OTHER_{index}_2025_10K", 1, "Consolidated Statements of Cash Flows\nOperating cash flows 70"),
+                (f"OTHER_{index}_2025_10K", 2, "Consolidated Balance Sheets\nTotal assets 90"),
+            ))
+        cases.extend((
+            ("3M_2025_10K", 1, "Company introduction and ordinary business descriptions."),
+            ("3M_2025_10K", 2, "CONSOLIDATED STATEMENTS OF CASH FLOWS (In millions)\nOperating activities 8"),
+            ("3M_2025_10K", 3, "Investing activities\nCapital expenditures 4"),
+        ))
+        async with open_builtin_runtime(config, candidate_pipeline=_PagePipeline()) as runtime:
+            assert runtime.scopes is not None
+            scope = await runtime.scopes.create(
+                ScopeDraft(title="Reports", summary="Several companies", idempotency_key="reports")
+            )
+            await runtime.ingestion.register(manifest_for_definition(PDF_PAGE_SOURCE_DEFINITION))
+            for document, number, text in cases:
+                source = await registry.resolve(
+                    PDFPageInput(document_id=document, document_sha256="b" * 64, page_number=number, text=text)
+                )
+                await runtime.ingestion.submit(
+                    SubmitSourceObservation(
+                        scope_id=scope.scope_id, observation=project_source_for_transport(registry, source)
+                    )
+                )
+            while (await runtime.memory.for_scope(scope.scope_id).flush()).processed:
+                pass
+        async with open_builtin_runtime(config) as runtime:
+            memory = runtime.memory.for_scope(scope.scope_id)
+            citations = await search_pdf_pages(
+                memory, "Does 3M have improving free cashflow conversion in FY2025?", limit=2
+            )
+            entries = [(await memory.get(GetMemoryEntryRequest(citation=citation))).entry for citation in citations]
+            assert len(entries) == 2
+            assert all(entry.text.startswith("3M_2025_10K\n") for entry in entries)
+            assert "Operating activities 8" in entries[0].text
+            assert "Capital expenditures 4" in entries[1].text
 
     asyncio.run(scenario())

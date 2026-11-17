@@ -186,11 +186,14 @@ def _candidates(entries, utility, query, max_bytes):
             score = utility(text, start, end)
             if score > 0:
                 entry_candidates.append((score, PreparedEvidenceFragment(address, start, end, text[start:end])))
-        if not any(
-            query.intersection(_terms(fragment.text)) and len(_render((fragment,)).encode("utf-8")) <= max_bytes
-            for _, fragment in entry_candidates
-        ):
-            for start, end in _query_windows(text, query):
+        for sentence_start, sentence_end in _sentences(text):
+            sentence = PreparedEvidenceFragment(
+                address, sentence_start, sentence_end, text[sentence_start:sentence_end]
+            )
+            if len(_render((sentence,)).encode("utf-8")) <= max_bytes:
+                continue
+            for local_start, local_end in _query_windows(sentence.text, query):
+                start, end = sentence_start + local_start, sentence_start + local_end
                 entry_candidates.append((
                     utility(text, start, end),
                     PreparedEvidenceFragment(address, start, end, text[start:end]),
