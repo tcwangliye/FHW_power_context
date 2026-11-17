@@ -5,6 +5,10 @@
 
 """Evidence ranking regressions through the public prepared-context builder."""
 
+import json
+
+import pytest
+
 from powercontext.artifacts import ArtifactRef
 from powercontext.builtin.artifacts.memory import MemoryHit
 from powercontext.builtin.runtime import PrepareContextRequest
@@ -13,6 +17,7 @@ from powercontext.builtin.runtime.prepared_context import (
     PreparedContextBuilder,
     PreparedMemoryCandidates,
 )
+from powercontext.builtin.runtime.prepared_text import TRUST_POLICY
 
 
 def _select(query, documents, max_bytes=1000):
@@ -91,3 +96,27 @@ def test_disconnected_results_share_the_budget_without_intervening_background():
     result = _select("cobalt sensor sensitivity accuracy", [("trial", text)], max_bytes=1000)
     assert any(first.strip() in fragment.text for fragment in result.fragments)
     assert any(last in fragment.text for fragment in result.fragments)
+
+
+def test_literal_unicode_separators_do_not_break_the_json_envelope():
+    text = "The cobalt sensor\u2028reports a temperature of 73 degrees\u2029under load."
+    result = _select("cobalt sensor temperature", [("measurement", text)])
+    assert result.context.content is not None
+    assert result.context.content.startswith(TRUST_POLICY + "\n\nBEGIN_POWERCONTEXT_PREPARED_CONTEXT_V1\n")
+    payload = json.loads(result.context.content.splitlines()[-2])
+    assert payload["items"][0]["content"] == text
+
+
+def test_unspaced_cjk_query_finds_late_literal_evidence():
+    evidence = "关键温度阈值为73摄氏度。"
+    text = "这是普通背景资料。" * 100 + evidence
+    result = _select("温度阈值", [("measurement", text)], max_bytes=1000)
+    assert any(evidence in fragment.text for fragment in result.fragments)
+
+
+@pytest.mark.parametrize("max_bytes", (1000, 32768))
+def test_many_short_sentences_keep_the_late_result(max_bytes):
+    evidence = "The cobalt sensor threshold was measured at 73 degrees."
+    text = "A. " * 2000 + evidence
+    result = _select("cobalt sensor threshold", [("measurement", text)], max_bytes=max_bytes)
+    assert any(evidence in fragment.text for fragment in result.fragments)

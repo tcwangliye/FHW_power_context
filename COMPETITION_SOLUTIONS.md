@@ -42,16 +42,22 @@ claim for arbitrarily large libraries.
 ## Evidence selection
 
 The selector preserves exact source text, Python character offsets, scope and
-revision identities. The trust policy, envelope, JSON, citations and text all
-count toward the UTF-8 byte budget. Oversized sentences receive local query
-windows even when a short introduction also matches the query; introductory
-matches cannot suppress evidence near the end of a longer result sentence.
-Ordinary context preparation remains the default.
+revision identities. The existing trust policy and envelope separator are
+preserved. Unicode line separators are escaped inside JSON and decode back to
+the original text. Chinese sentence boundaries and unspaced query terms are
+handled without changing source characters. Ordinary preparation is unchanged.
 
-Before filling remaining space, the selector compares disjoint windows from
-the same exact entry. It charges both citations and the JSON separator, and
-scores their union without rewarding repeated sentences. This prevents a
-large contiguous window from consuming the space needed for a second result.
+A small offline ranker scores generic query, document and sentence features.
+Thirty scalar weights are fitted using 350 public SciFact TRAIN claims across
+220 documents. There are no query/document ID mappings, stored answers, online
+models or additional inference dependencies. Repeated sentences do not inflate
+document relevance; scientific identifiers retain their full spelling.
+
+Interval packing accounts for the actual serialized citation, JSON separators,
+envelope and UTF-8 text costs. It can combine non-overlapping spans within and
+across entries, retaining only non-dominated cost/utility plans. Highly fragmented
+inputs bound interval endpoint enumeration. Oversized sentences use literal
+query-centered windows with the same byte accounting.
 
 ## Verification
 
@@ -62,19 +68,27 @@ make -C competition docker-test
 ```
 
 The ten public suites pass 95 tests. Related product regression suites pass
-86 tests, including multi-report company and acronym matching after restart,
+90 tests, including multi-report company and acronym matching after restart,
 statement headings versus matching narrative, duplicate-page citations, long
-result sentences and disconnected evidence under a shared budget.
+result sentences, disconnected evidence, Unicode JSON framing, unspaced Chinese
+queries and thousands of short sentences under a shared budget.
 
 Independent diagnostics use original public FinanceBench PDFs and SciFact TRAIN
 abstracts. Candidate processes receive only original inputs, queries and
 budgets; annotation scoring runs separately. Additional report collections
-contain 467 pages/six questions and 571 pages/21 questions. A SciFact sample has
-120 training claims, three abstracts per claim and both 1,400/1,800-byte budgets;
-every candidate is stored and each fragment is read back through the real
-Memory API. A separate stress set unions multiple annotation sets for a claim;
-it still has incomplete coverage and is not a reproduction of the undisclosed
-official scoring selection. These developer checks are not official results.
+contain 467 pages/six questions and 571 pages/21 questions. SciFact TRAIN is
+partitioned by evidence document; fitting excludes validation documents even
+from distractor candidates. An independent 39-document partition has 86 requests
+at 1,400/1,800-byte budgets. Every candidate is stored and each fragment is read
+back through the real Memory API. A separate stress set unions multiple
+annotation alternatives and remains harder than the ordinary diagnostic sample.
+These developer checks are not official results.
+
+Training-data attribution: [SciFact](https://github.com/allenai/scifact/tree/68b98a56d93e0f9da0d2aab4e6c3294699a0f72e),
+Wadden et al., *Fact or Fiction: Verifying Scientific Claims* (2020).
+Claims and evidence annotations are CC BY 4.0; abstracts follow S2ORC's ODC-By
+1.0 terms. The product contains only generic features and fitted scalar weights,
+not the training corpus or annotations. DEV/TEST labels are not used for fitting.
 
 Changed Python files pass Ruff lint/format and focused type checking. Full
 pre-commit runs retain repository-wide type diagnostics; this is not reported

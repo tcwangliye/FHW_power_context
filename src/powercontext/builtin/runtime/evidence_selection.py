@@ -17,7 +17,6 @@
 from __future__ import annotations
 
 import json
-import math
 import re
 from collections import Counter
 from itertools import pairwise, takewhile
@@ -25,6 +24,7 @@ from itertools import pairwise, takewhile
 from powercontext.artifacts import ArtifactAddress
 from powercontext.builtin.evidence.lexical import lexical_terms
 from powercontext.builtin.runtime.errors import PreparedContextInvariantError
+from powercontext.builtin.runtime.evidence_ranker import SentenceEvidenceRanker
 from powercontext.builtin.runtime.models import PreparedContext
 from powercontext.builtin.runtime.prepared_context import (
     MemoryEntryAddress,
@@ -53,7 +53,16 @@ def _terms(text: str) -> list[str]:
     identifier = r"\b[a-z]+(?:-?\d+[a-z]*)+\b"
     entities = [word.replace("-", "") for word in re.findall(identifier, text)]
     words = lexical_terms(re.sub(identifier, " ", text))
-    return [_SYNONYMS.get(term, term) for term in (*words, *entities) if term not in _QUERY_NOISE]
+    normalized = [_SYNONYMS.get(term, term) for term in (*words, *entities) if term not in _QUERY_NOISE]
+    return [
+        part
+        for term in normalized
+        for part in (
+            [term[index : index + 2] for index in range(len(term) - 1)]
+            if len(term) > 2 and re.fullmatch(r"[\u3400-\u9fff]+", term)
+            else [term]
+        )
+    ]
 
 
 def _query_vocabulary(query, entries):
@@ -87,9 +96,12 @@ def _render(fragments: tuple[PreparedEvidenceFragment, ...]) -> str:
         for fragment in fragments
     ]
     return "\n".join((
-        TRUST_POLICY,
+        TRUST_POLICY + "\n",
         "BEGIN_POWERCONTEXT_PREPARED_CONTEXT_V1",
-        json.dumps({"trust": "untrusted_history", "items": items}, ensure_ascii=False, separators=(",", ":")),
+        json
+        .dumps({"trust": "untrusted_history", "items": items}, ensure_ascii=False, separators=(",", ":"))
+        .replace("\u2028", "\\u2028")
+        .replace("\u2029", "\\u2029"),
         "END_POWERCONTEXT_PREPARED_CONTEXT_V1",
     ))
 
@@ -117,143 +129,112 @@ def _sentences(text: str):
     # character: decimal points and abbreviations are part of the evidence.
     boundaries = [
         0,
-        *(match.end() for match in re.finditer(r"(?<=[.!?])\s+(?=[A-Z0-9\"(\u3400-\u9fff])|\n+", text)),
+        *(
+            match.end()
+            for match in re.finditer(
+                r"(?<=[.!?])\s+(?=[A-Z0-9\"(\u3400-\u9fff])|(?<=[\u3002\uff01\uff1f])\s*|\n+", text
+            )
+        ),
         len(text),
     ]
     return [(start, end) for start, end in pairwise(boundaries) if text[start:end].strip()]
 
 
-def _windows(text: str):
-    spans = _sentences(text)
-    for i in range(len(spans)):
-        for width in range(1, 7):
-            if i + width <= len(spans):
-                yield spans[i][0], spans[i + width - 1][1]
-    if spans:
-        yield 0, len(text)
-
-
-def _rhetorical_weight(text: str, start: int, end: int) -> float:
-    labels = list(
-        re.finditer(
-            r"\b(BACKGROUND|IMPORTANCE|OBJECTIVES?|PURPOSE|METHODS?|DESIGN|PARTICIPANTS|RESULTS?|FINDINGS|CONCLUSIONS?|INTERPRETATION)\b",
-            text[:end],
-        )
-    )
-    selected = [match.group() for match in labels if start <= match.start() < end]
-    if not selected and labels:
-        selected = [labels[-1].group()]
-    body = text[start:end].casefold()
-    numerical = bool(
-        re.search(r"\d+(?:[.]\d+)?\s*(?:%|fold|\bvs\b)|\b(?:mean|cost|rate|ratio|risk|compared)\b.*\d", body)
-    )
-    empirical = bool(
-        re.search(
-            r"\b(?:found|showed|demonstrated|observed|associated|correlated|increased|decreased|reduced|higher|lower|revealed|resulted|indicated)\b",
-            body,
-        )
-    )
-    if any(label.startswith(("RESULT", "FINDING")) for label in selected):
-        return 2.0 if numerical or empirical else 1.2
-    if any(label.startswith(("CONCLUSION", "INTERPRETATION")) for label in selected):
-        return 1.6
-    if selected:
-        return 0.6
-    if empirical:
-        return 1.5
-    if numerical:
-        return 1.4
-    if re.search(r"\b(?:objective|hypothes[ei]s|aim|purpose|to (?:evaluate|investigate|examine))\b", body):
-        return 0.5
-    return 0.85 if start == 0 else 1.0
-
-
 def _query_windows(text: str, query: set[str]):
-    """Fallback for evidence inside a sentence too large for the envelope."""
     words = list(re.finditer(r"\S+", text))
     for index, word in enumerate(words):
         if not query.intersection(_terms(word.group())):
             continue
         for radius in (8, 16, 32):
             yield words[max(0, index - radius)].start(), words[min(len(words) - 1, index + radius)].end()
-
-
-def _candidates(entries, utility, query, max_bytes):
-    candidates: list[tuple[float, PreparedEvidenceFragment]] = []
-    for address, text in entries:
-        entry_candidates = []
-        for start, end in _windows(text):
-            score = utility(text, start, end)
-            if score > 0:
-                entry_candidates.append((score, PreparedEvidenceFragment(address, start, end, text[start:end])))
-        for sentence_start, sentence_end in _sentences(text):
-            sentence = PreparedEvidenceFragment(
-                address, sentence_start, sentence_end, text[sentence_start:sentence_end]
-            )
-            if len(_render((sentence,)).encode("utf-8")) <= max_bytes:
-                continue
-            for local_start, local_end in _query_windows(sentence.text, query):
-                start, end = sentence_start + local_start, sentence_start + local_end
-                entry_candidates.append((
-                    utility(text, start, end),
-                    PreparedEvidenceFragment(address, start, end, text[start:end]),
-                ))
-        candidates.extend(entry_candidates)
-    candidates.sort(key=lambda item: -item[0])
-    return candidates
-
-
-def _initial_fragments(entries, candidates, max_bytes, interval_utility):
-    overhead = len(_render(()).encode("utf-8"))
-    feasible = [
-        (score, fragment, size - overhead)
-        for score, fragment in candidates
-        if score > 0 and (size := len(_render((fragment,)).encode("utf-8"))) <= max_bytes
-    ]
-    if not feasible:
-        return ()
-    best_score, first, _ = feasible[0]
-    selected = (first,)
-    for index, (score, fragment, size) in enumerate(feasible):
-        if score * 2 <= best_score:
-            break
-        for other_score, other, other_size in feasible[index + 1 :]:
-            if score + other_score <= best_score:
-                break
-            if fragment.address != other.address:
-                continue
-            if fragment.start <= other.end and other.start <= fragment.end:
-                continue
-            if overhead + size + other_size + 1 > max_bytes:
-                continue
-            text = next(text for address, text in entries if address == fragment.address)
-            extra_bytes = other_size + 1 - len(json.dumps(other.text, ensure_ascii=False).encode("utf-8"))
-            combined = interval_utility(text, ((fragment.start, fragment.end), (other.start, other.end)), extra_bytes)
-            if combined > best_score:
-                best_score = combined
-                selected = (fragment, other)
-    return selected
-
-
-def _fit_fragments(entries, candidates, max_bytes, interval_utility):
-    selected = _initial_fragments(entries, candidates, max_bytes, interval_utility)
-    # Each accepted interval must add new source characters. Merge intervals from
-    # the same entry to avoid paying another citation for neighboring sentences.
-    for _, candidate in candidates:
-        same = [item for item in selected if item.address == candidate.address]
-        if any(item.start <= candidate.start and item.end >= candidate.end for item in same):
+    for term in sorted(query):
+        if not re.search(r"[\u3400-\u9fff]", term):
             continue
-        start, end = candidate.start, candidate.end
-        overlap = [item for item in same if item.end >= start and item.start <= end]
-        if overlap:
-            start = min(start, *(item.start for item in overlap))
-            end = max(end, *(item.end for item in overlap))
-        source_text = next(text for address, text in entries if address == candidate.address)
-        merged = PreparedEvidenceFragment(candidate.address, start, end, source_text[start:end])
-        trial = (*(item for item in selected if item not in overlap), merged)
-        if len(_render(trial).encode("utf-8")) <= max_bytes:
-            selected = trial
-    return selected
+        for match in re.finditer(re.escape(term), text):
+            for radius in (16, 32, 64):
+                yield max(0, match.start() - radius), min(len(text), match.end() + radius)
+
+
+def _frontier(states):
+    highest = -1.0
+    result = {}
+    for size, (score, fragments) in sorted(states.items()):
+        if score > highest + 1e-10:
+            result[size] = (score, fragments)
+            highest = score
+    return result
+
+
+def _entry_options(address, text, spans, ranker, document_index, capacity, overhead, query):
+    repeats = Counter(" ".join(text[start:end].casefold().split()) for start, end in spans)
+    cumulative = [0.0]
+    for index, (start, end) in enumerate(spans):
+        score = ranker.score(document_index, index, start, end)
+        cumulative.append(cumulative[-1] + score / repeats[" ".join(text[start:end].casefold().split())])
+    endpoints = range(len(spans))
+    if len(spans) > 128:
+        ranked = sorted(endpoints, key=lambda index: (cumulative[index] - cumulative[index + 1], index))
+        endpoints = sorted({0, len(spans) - 1, *ranked[:128]})
+    options = {}
+    for position, index in enumerate(endpoints):
+        start, sentence_end = spans[index]
+        for last in endpoints[position:]:
+            stop = last + 1
+            end = spans[last][1]
+            fragment = PreparedEvidenceFragment(address, start, end, text[start:end])
+            size = len(_render((fragment,)).encode("utf-8")) - overhead + 1
+            if size > capacity:
+                break
+            options[start, end] = (size, cumulative[stop] - cumulative[index], fragment)
+        if (start, sentence_end) in options:
+            continue
+        for local_start, local_end in _query_windows(text[start:sentence_end], query):
+            left, right = start + local_start, start + local_end
+            fragment = PreparedEvidenceFragment(address, left, right, text[left:right])
+            size = len(_render((fragment,)).encode("utf-8")) - overhead + 1
+            if size <= capacity:
+                options[left, right] = (size, ranker.score(document_index, index, left, right), fragment)
+    return options
+
+
+def _entry_plans(text, options, capacity):
+    positions = sorted({0, len(text), *(position for bounds in options for position in bounds)})
+    indices = {position: index for index, position in enumerate(positions)}
+    choices = [[] for _ in positions]
+    for (start, end), (size, score, fragment) in options.items():
+        choices[indices[start]].append((indices[end], size, score, fragment))
+    states = [{} for _ in positions]
+    states[0][0] = (0.0, ())
+    for index, candidates in enumerate(choices[:-1]):
+        for size, (score, fragments) in _frontier(states[index]).items():
+            if score > states[index + 1].get(size, (-1, ()))[0]:
+                states[index + 1][size] = (score, fragments)
+            for stop, added_size, added_score, fragment in candidates:
+                total_size = size + added_size
+                if total_size <= capacity and score + added_score > states[stop].get(total_size, (-1, ()))[0]:
+                    states[stop][total_size] = (score + added_score, (*fragments, fragment))
+    return _frontier(states[-1])
+
+
+def _fit_entries(entries, spans, ranker, max_bytes, query):
+    overhead = len(_render(()).encode("utf-8"))
+    capacity = max_bytes - overhead + 1
+    states = {0: (0.0, ())}
+    seen_texts = set()
+    for index, (address, text) in enumerate(entries):
+        if text in seen_texts:
+            continue
+        seen_texts.add(text)
+        options = _entry_options(address, text, spans[index], ranker, index, capacity, overhead, query)
+        alternatives = _entry_plans(text, options, capacity)
+        combined = {}
+        for size, (score, fragments) in states.items():
+            for added_size, (added_score, added_fragments) in alternatives.items():
+                total_size = size + added_size
+                if total_size <= capacity and score + added_score > combined.get(total_size, (-1, ()))[0]:
+                    combined[total_size] = (score + added_score, (*fragments, *added_fragments))
+        states = _frontier(combined)
+    return max(states.values(), key=lambda item: item[0])[1] if states else ()
 
 
 def select_memory_fragments(request, groups) -> PreparedContextBuild:
@@ -264,53 +245,13 @@ def select_memory_fragments(request, groups) -> PreparedContextBuild:
     def terms(text):
         return [aliases.get(term, term) for term in _terms(text)]
 
-    frequency = Counter(term for _, text in entries for term in set(terms(text)))
-    weights = {
-        term: math.log(1 + (len(entries) - frequency[term] + 0.5) / (frequency[term] + 0.5))
-        * (0.25 if term.isdigit() else 3 if any(char.isdigit() for char in term) else 1)
-        for term in query
-    }
-
-    document_scores = {}
-    for _, text in entries:
-        counts = Counter(terms(text))
-        title = set(terms(text[:200].split(". ")[0]))
-        document_scores[text] = sum(
-            weights[term] * (counts[term] * 2 / (counts[term] + 1) + (term in title)) for term in query if counts[term]
-        ) / (1 + sum(counts.values()) / 1000)
-    strongest = max(document_scores.values(), default=1) or 1
-
-    def sentence_score(text: str, start: int, end: int) -> float:
-        tokens = terms(text[start:end])
-        counts = Counter(tokens)
-        local = sum(weights[term] * (1 + math.log(counts[term])) for term in query if counts[term])
-        document = document_scores[text]
-        score = (local + 0.3 * document) * (document / strongest) ** 3
-        return score * _rhetorical_weight(text, start, end) / (1 + len(tokens) / 50)
-
-    sentence_scores = {
-        text: [(start, end, sentence_score(text, start, end)) for start, end in _sentences(text)] for _, text in entries
-    }
-
-    def interval_utility(text: str, intervals, extra_bytes: int = 0) -> float:
-        scores = {}
-        for sentence_start, sentence_end, score in sentence_scores[text]:
-            if any(sentence_start >= start and sentence_end <= end for start, end in intervals):
-                key = " ".join(text[sentence_start:sentence_end].casefold().split())
-                scores[key] = max(scores.get(key, 0), score)
-        if not scores:
-            return sum(sentence_score(text, start, end) for start, end in intervals)
-        # Add evidence across sentences. A window spanning a section boundary
-        # must not lend its RESULTS label to background or objective sentences.
-        # Repeating the same sentence does not add another piece of evidence.
-        size = extra_bytes + sum(len(text[start:end].encode("utf-8")) for start, end in intervals)
-        return sum(scores.values()) / (1 + size / 1500)
-
-    def utility(text: str, start: int, end: int) -> float:
-        return interval_utility(text, ((start, end),))
-
-    candidates = _candidates(entries, utility, query, request.max_bytes)
-    selected = _fit_fragments(entries, candidates, request.max_bytes, interval_utility)
+    texts = [text for _, text in entries]
+    spans = [_sentences(text) for text in texts]
+    if query and any(query.intersection(terms(text)) for text in texts):
+        ranker = SentenceEvidenceRanker(query, texts, spans, terms)
+        selected = _fit_entries(entries, spans, ranker, request.max_bytes, query)
+    else:
+        selected = ()
     if not selected:
         return PreparedContextBuild(
             context=PreparedContext(status="empty", content=None, content_bytes=0), origins=(), fragments=()
