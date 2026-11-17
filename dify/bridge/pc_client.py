@@ -32,9 +32,10 @@ class MemoryEntry:
     kind: str
     text: str
     citation: dict[str, Any]
+    state: str = "active"
 
     def public(self) -> dict[str, str]:
-        return {"entry_id": self.entry_id, "kind": self.kind, "text": self.text}
+        return {"entry_id": self.entry_id, "kind": self.kind, "text": self.text, "state": self.state}
 
 
 def _scope_key(prefix: str, player_id: str) -> str:
@@ -48,6 +49,7 @@ def _parse_entry(raw: dict[str, Any]) -> MemoryEntry:
         kind=str(raw.get("kind") or "note"),
         text=str(raw.get("text") or ""),
         citation=raw["citation"],
+        state=str(raw.get("state") or "active"),
     )
 
 
@@ -136,6 +138,7 @@ class PowerContextClient:
                     kind="recalled",
                     text=str(hit.get("text") or ""),
                     citation=hit["citation"],
+                    state="active",
                 )
             )
         return results

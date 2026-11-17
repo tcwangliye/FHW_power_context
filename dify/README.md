@@ -89,17 +89,19 @@ dify/
 ├── deploy/
 │   ├── docker-compose.lethe.yaml  # 叠加到 Dify compose 的 override
 │   ├── powercontext.Dockerfile    # PowerContext Server 镜像
+│   ├── model_stub/                # 无模型凭据时用的脚本替身（非模型）
 │   ├── dify.env.additions         # 必须追加到 Dify .env 的配置
 │   └── powercontext.env.example   # 主机开发模式的配置模板
 ├── scripts/
 │   ├── verify_demo.py             # 端到端验证，产出证据
 │   ├── reset_demo.py              # 恢复演示初始状态
+│   ├── dryrun_flow.py             # 用 DSL 真实代码节点跑链路（不需要 Dify）
 │   ├── check_dsl.py               # DSL 静态检查 + 代码节点执行检查
 │   └── validate_with_dify.py      # 用 Dify 自己的导入器校验 DSL
 ├── samples/
 │   └── scenario.md                # 验证样例
 └── evidence/
-    └── run-*/scenario.json        # 实际运行记录
+    └── run-*/                     # 实际运行记录与截图
 ```
 
 ---
@@ -164,13 +166,14 @@ SSRF_PROXY_ALLOW_PRIVATE_IPS=172.28.0.0/16
 
 ### 5.3 启动 Dify + PowerContext + bridge
 
-在 Dify 的 `docker/` 目录下，用本仓库的 override 叠加启动：
+Compose 会把相对路径解析到**项目目录**（第一个 `-f` 文件所在目录），所以仓库根目录要显式给出：
 
 ```bash
+export LETHE_REPO=/absolute/path/to/this-repo
 cd /path/to/dify/docker
 docker compose \
   -f docker-compose.yaml \
-  -f /path/to/this-repo/dify/deploy/docker-compose.lethe.yaml \
+  -f "$LETHE_REPO/dify/deploy/docker-compose.lethe.yaml" \
   up -d
 ```
 
@@ -180,12 +183,13 @@ docker compose \
 docker compose ps
 docker compose logs -f lethe-bridge      # 出现 bridge listening on 0.0.0.0:8080 即可
 curl -s http://127.0.0.1:18000/health/ready
-curl -s http://127.0.0.1:8080/healthz
+curl -s http://127.0.0.1:8081/healthz
 ```
 
 `/healthz` 返回 `{"status":"ok","powercontext":"ready"}` 表示三层已连通。
 
-PowerContext 的数据在 named volume `lethe-powercontext-data` 里；`18000` 只绑定 loopback，供检查用。
+PowerContext 的数据在 named volume `lethe-powercontext-data` 里；`18000`（PowerContext）与
+`8081`（bridge）都只绑定 loopback，供检查和验证脚本使用。
 
 ### 5.4 建管理员并配模型
 
@@ -204,11 +208,26 @@ PowerContext 的数据在 named volume `lethe-powercontext-data` 里；`18000` �
 
 > 如果你的网关不允许自定义模型名（名字必须等于上游真实模型 id），导入后打开 **阿忘** 节点，
 > 在模型下拉框里重新选一次即可。DSL 里默认写的是 `lethe-npc`。
+>
+> 该插件版本的凭据字段名是 `endpoint_url`（不是 `base_url`）。用 API 配置时要注意这一点。
 
 4. 也可以用 **Ollama** 完全离线：`ollama pull qwen2.5:7b`，Base URL 填
    `http://host.docker.internal:11434/v1`，模型名 `qwen2.5:7b`，API Key 随便填。
    此时需要把 SSRF 放行范围扩大到你所在网段，例如
    `SSRF_PROXY_ALLOW_PRIVATE_IPS=172.28.0.0/16,192.168.0.0/16`。
+
+**没有模型服务时**，可以用本仓库自带的脚本替身验证编排链路：
+
+```bash
+export LETHE_REPO=/absolute/path/to/this-repo
+cd /path/to/dify/docker
+docker compose -f docker-compose.yaml -f "$LETHE_REPO/dify/deploy/docker-compose.lethe.yaml" \
+  up -d lethe-model-stub
+```
+
+然后在模型供应商里把 `endpoint_url` 填成 `http://lethe-model-stub:8080/v1`，模型名 `lethe-npc`，
+API Key 随便填。它是确定性 HTTP 服务，**不是模型**，只用来验证节点数据流和分支判定；
+换成真实端点无需改动 DSL 或 bridge。
 
 ### 5.5 导入 DSL
 
@@ -238,7 +257,7 @@ curl -X POST 'http://localhost/v1/chat-messages' \
 
 ```bash
 export DIFY_APP_KEY=app-xxxxxxxxxxxx
-python scripts/verify_demo.py --mode dify --player demo-lin
+python scripts/verify_demo.py --mode dify --player demo-lin --bridge http://127.0.0.1:8081
 ```
 
 脚本按 [samples/scenario.md](samples/scenario.md) 跑完五步，把每一步的请求、回答、记忆快照和判定写入
@@ -251,13 +270,19 @@ docker compose logs lethe-bridge > evidence/bridge.log
 docker compose logs lethe-powercontext > evidence/powercontext.log
 ```
 
+不想依赖 Dify 时，可以只跑 DSL 的真实代码节点（LLM 用脚本台词代替）：
+
+```bash
+python scripts/dryrun_flow.py --player demo-lin --bridge http://127.0.0.1:8081
+```
+
 没有 Dify 时可以只验证 PowerContext 链路：
 
 ```bash
 python scripts/verify_demo.py --mode bridge --player demo-lin
 ```
 
-已有的运行记录和"还需要补什么"见 [evidence/README.md](evidence/README.md)。
+已有的运行记录与截图见 [evidence/README.md](evidence/README.md)。
 
 ### 6.2 用 Dify 的导入器校验 DSL
 

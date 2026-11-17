@@ -1,0 +1,162 @@
+{
+  "steps": [
+    {
+      "step": 1,
+      "name": "reset",
+      "request": {
+        "player": "demo-lin"
+      },
+      "response": {
+        "player_id": "demo-lin",
+        "scope_id": "scp_41jem87x53yeybqxffkqqh2cwa",
+        "retired_count": 3,
+        "retired": [
+          "mem_ent_7e957b3ce03a4dcd9b2ecee5b241a434",
+          "mem_ent_98097e3543c4460095f41f11a6219918",
+          "mem_ent_c23a1c07d3214532a30979e230be1fb7"
+        ]
+      },
+      "at": "2026-11-17T14:02:42+00:00"
+    },
+    {
+      "step": 2,
+      "name": "step1-introduce",
+      "request": {
+        "conversation": "A",
+        "utterance": "我叫小林，不吃香菜，酒要温的。"
+      },
+      "response": {
+        "answer": "面生。第一次来吧，坐下说。你说的我记下了，下次不用再讲一遍。",
+        "conversation_id": "6bc13e1f-9963-4632-8a23-cb33f1323b69"
+      },
+      "at": "2026-11-17T14:03:04+00:00",
+      "memories": [
+        {
+          "entry_id": "mem_ent_a8d427039423434b8b9b5d62902fe8c2",
+          "kind": "preference",
+          "text": "小林喜欢温过的酒",
+          "state": "active"
+        },
+        {
+          "entry_id": "mem_ent_ddec97a45d6b4fd6a1e2c3a21b6bcaed",
+          "kind": "preference",
+          "text": "小林不吃香菜",
+          "state": "active"
+        },
+        {
+          "entry_id": "mem_ent_e6f453709e2e49c599471f6bc71e3190",
+          "kind": "identity",
+          "text": "常来的客人，自称小林",
+          "state": "active"
+        }
+      ]
+    },
+    {
+      "step": 3,
+      "name": "step2-mischief",
+      "request": {
+        "conversation": "A",
+        "utterance": "我把你的酒杯打翻了，哈哈。"
+      },
+      "response": {
+        "answer": "又来了。我还记着：（身份）常来的客人，自称小林。你说的我记下了，下次不用再讲一遍。",
+        "conversation_id": "6bc13e1f-9963-4632-8a23-cb33f1323b69"
+      },
+      "at": "2026-11-17T14:03:25+00:00",
+      "memories": [
+        {
+          "entry_id": "mem_ent_1d9afb4a6de04c10a74ee23041c0674f",
+          "kind": "event",
+          "text": "小林把酒杯打翻了还笑着说手滑",
+          "state": "active"
+        },
+        {
+          "entry_id": "mem_ent_a8d427039423434b8b9b5d62902fe8c2",
+          "kind": "preference",
+          "text": "小林喜欢温过的酒",
+          "state": "active"
+        },
+        {
+          "entry_id": "mem_ent_ddec97a45d6b4fd6a1e2c3a21b6bcaed",
+          "kind": "preference",
+          "text": "小林不吃香菜",
+          "state": "active"
+        },
+        {
+          "entry_id": "mem_ent_e6f453709e2e49c599471f6bc71e3190",
+          "kind": "identity",
+          "text": "常来的客人，自称小林",
+          "state": "active"
+        }
+      ]
+    },
+    {
+      "step": 4,
+      "name": "step3-new-session-recall",
+      "request": {
+        "conversation": "B",
+        "utterance": "你还记得我吗？我上次干过什么？"
+      },
+      "response": {
+        "answer": "又来了。我还记着：（身份）常来的客人，自称小林。有什么想说的，就说。",
+        "conversation_id": "de90a61f-cd92-4ddc-bada-5cfc854777fa"
+      },
+      "at": "2026-11-17T14:03:47+00:00"
+    },
+    {
+      "step": 5,
+      "name": "step4-forget",
+      "request": {
+        "conversation": "B",
+        "utterance": "打翻你酒杯那件事，忘了吧。"
+      },
+      "response": {
+        "answer": "行，那就当我没听过。忘川的水一冲，什么都不剩。",
+        "conversation_id": "de90a61f-cd92-4ddc-bada-5cfc854777fa"
+      },
+      "at": "2026-11-17T14:04:09+00:00"
+    },
+    {
+      "step": 6,
+      "name": "step5-new-session-after-forget",
+      "request": {
+        "conversation": "C",
+        "utterance": "我上次在你店里干过什么坏事吗？"
+      },
+      "response": {
+        "answer": "又来了。我还记着：（身份）常来的客人，自称小林。有什么想说的，就说。",
+        "conversation_id": "1f9c385c-8fbd-4872-9840-fcac6522818d"
+      },
+      "at": "2026-11-17T14:04:31+00:00"
+    },
+    {
+      "step": 7,
+      "name": "final-memory-state",
+      "request": {},
+      "response": {
+        "memories": [
+          {
+            "entry_id": "mem_ent_a8d427039423434b8b9b5d62902fe8c2",
+            "kind": "preference",
+            "text": "小林喜欢温过的酒",
+            "state": "active"
+          },
+          {
+            "entry_id": "mem_ent_ddec97a45d6b4fd6a1e2c3a21b6bcaed",
+            "kind": "preference",
+            "text": "小林不吃香菜",
+            "state": "active"
+          },
+          {
+            "entry_id": "mem_ent_e6f453709e2e49c599471f6bc71e3190",
+            "kind": "identity",
+            "text": "常来的客人，自称小林",
+            "state": "active"
+          }
+        ]
+      },
+      "at": "2026-11-17T14:04:31+00:00"
+    }
+  ],
+  "failures": []
+}

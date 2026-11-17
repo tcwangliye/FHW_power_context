@@ -1,0 +1,126 @@
+{
+  "steps": [
+    {
+      "step": 1,
+      "name": "preflight",
+      "at": "2026-11-17T12:47:44+00:00",
+      "notes": [
+        "bridge=http://127.0.0.1:8090",
+        "graph http nodes=['context_node', 'forget_node', 'remember_node']"
+      ]
+    },
+    {
+      "step": 2,
+      "name": "input_node",
+      "at": "2026-11-17T12:47:44+00:00",
+      "request": {
+        "player_id": "demo-lin",
+        "utterance": "我叫小林，不吃香菜，酒要温的。"
+      },
+      "outputs": {
+        "context_body": "{\"player_id\": \"demo-lin\", \"utterance\": \"我叫小林，不吃香菜，酒要温的。\"}"
+      },
+      "notes": [
+        "context_body={\"player_id\": \"demo-lin\", \"utterance\": \"我叫小林，不吃香菜，酒要温的。\"}"
+      ]
+    },
+    {
+      "step": 3,
+      "name": "context_node",
+      "at": "2026-11-17T12:47:44+00:00",
+      "outputs": {
+        "status_code": 200,
+        "body": "{\"player_id\": \"demo-lin\", \"scope_id\": \"scp_6k68q2sp34n0weyd2g84at8adk\", \"has_memory\": false, \"memory_count\": 0, \"memory_block\": \"\", \"memories\": [], \"retrieved\": []}"
+      },
+      "notes": [
+        "status=200"
+      ]
+    },
+    {
+      "step": 4,
+      "name": "prepare_node",
+      "at": "2026-11-17T12:47:44+00:00",
+      "outputs": {
+        "memory_block": "（你还没见过这位客人，关于他/她你什么都不记得。）",
+        "memory_count": 0
+      }
+    },
+    {
+      "step": 5,
+      "name": "npc_node",
+      "at": "2026-11-17T12:47:44+00:00",
+      "outputs": {
+        "text": "行，忘了。杯子碎了就碎了。\n<<<MEMORY>>>\n{\"remember\":[],\"forget\":[\"打翻酒杯\"]}\n"
+      },
+      "notes": [
+        "scripted: a real run would call the configured LLM here"
+      ]
+    },
+    {
+      "step": 6,
+      "name": "parse_node",
+      "at": "2026-11-17T12:47:44+00:00",
+      "outputs": {
+        "reply": "行，忘了。杯子碎了就碎了。",
+        "remember_count": 0,
+        "forget_count": 1
+      },
+      "notes": [
+        "reply=行，忘了。杯子碎了就碎了。",
+        "remember_body={\"player_id\": \"demo-lin\", \"memories\": []}",
+        "forget_body={\"player_id\": \"demo-lin\", \"targets\": [\"打翻酒杯\"]}"
+      ]
+    },
+    {
+      "step": 7,
+      "name": "if_forget_node",
+      "at": "2026-11-17T12:47:44+00:00",
+      "outputs": {
+        "result": true
+      }
+    },
+    {
+      "step": 8,
+      "name": "forget_node",
+      "at": "2026-11-17T12:47:44+00:00",
+      "outputs": {
+        "status_code": 200,
+        "body": "{\"player_id\": \"demo-lin\", \"scope_id\": \"scp_6k68q2sp34n0weyd2g84at8adk\", \"retired\": [], \"retired_count\": 0, \"unmatched\": [\"打翻酒杯\"]}"
+      }
+    },
+    {
+      "step": 9,
+      "name": "if_remember_node",
+      "at": "2026-11-17T12:47:44+00:00",
+      "outputs": {
+        "result": false
+      }
+    },
+    {
+      "step": 10,
+      "name": "answer_node",
+      "at": "2026-11-17T12:47:44+00:00",
+      "outputs": {
+        "answer": "{{#parse_node.reply#}}"
+      }
+    },
+    {
+      "step": 11,
+      "name": "memory-state",
+      "at": "2026-11-17T12:47:45+00:00",
+      "outputs": {
+        "active": [],
+        "inactive": [
+          "小林不吃香菜",
+          "小林不吃香菜",
+          "小林要温酒",
+          "小林要温酒"
+        ]
+      }
+    }
+  ],
+  "failures": [],
+  "scripted_npc": [
+    "行，忘了。杯子碎了就碎了。\n<<<MEMORY>>>\n{\"remember\":[],\"forget\":[\"打翻酒杯\"]}\n"
+  ]
+}

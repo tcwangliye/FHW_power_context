@@ -1,11 +1,14 @@
 # Overlay for the official Dify compose file.
 #
-# Run from the Dify checkout's docker/ directory so the default network is the
-# one Dify's api, worker and plugin daemon already join:
+# Compose resolves relative build contexts against the *project* directory (the
+# directory of the first -f file), not against this file, so the repository root
+# is passed explicitly instead of guessed:
 #
+#   export LETHE_REPO=/absolute/path/to/this-repo
+#   cd <dify-checkout>/docker
 #   docker compose \
 #     -f docker-compose.yaml \
-#     -f <repo>/dify/deploy/docker-compose.lethe.yaml \
+#     -f "$LETHE_REPO/dify/deploy/docker-compose.lethe.yaml" \
 #     up -d
 #
 # The default network subnet is pinned so that SSRF_PROXY_ALLOW_PRIVATE_IPS can
@@ -14,8 +17,8 @@
 services:
   lethe-powercontext:
     build:
-      context: ..
-      dockerfile: deploy/powercontext.Dockerfile
+      context: ${LETHE_REPO:?set LETHE_REPO to the absolute path of this repository}
+      dockerfile: dify/deploy/powercontext.Dockerfile
     restart: unless-stopped
     environment:
       POWERCONTEXT_HOME: /data
@@ -32,7 +35,7 @@ services:
 
   lethe-bridge:
     build:
-      context: ../bridge
+      context: ${LETHE_REPO:?set LETHE_REPO to the absolute path of this repository}/dify/bridge
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
@@ -43,10 +46,28 @@ services:
     depends_on:
       lethe-powercontext:
         condition: service_healthy
+    ports:
+      # Loopback only, so the verification script can inspect memory state.
+      - "127.0.0.1:${LETHE_BRIDGE_PORT:-8081}:8080"
     healthcheck:
       interval: 10s
       timeout: 5s
       start_period: 10s
+      retries: 6
+
+  # Scripted stand-in for a chat model, used only when no real provider is
+  # configured. It is a plain HTTP service, not a model; see deploy/model_stub.
+  lethe-model-stub:
+    build:
+      context: ${LETHE_REPO:?set LETHE_REPO to the absolute path of this repository}/dify/deploy/model_stub
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      STUB_MODEL_NAME: lethe-npc
+    healthcheck:
+      interval: 10s
+      timeout: 5s
+      start_period: 5s
       retries: 6
 
 volumes:

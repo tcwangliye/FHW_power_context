@@ -290,6 +290,9 @@ workflow:
             {"remember":[{"kind":"preference|event|identity|promise","text":"以阿忘的口吻记录的一件事实"}],"forget":["要被遗忘的那件事"]}
 
             没有要记的就给空数组。JSON 必须写成一行，且只能是合法 JSON。
+        - id: npc-user
+          role: user
+          text: '{{#sys.query#}}'
         selected: false
         title: 阿忘
         type: llm
