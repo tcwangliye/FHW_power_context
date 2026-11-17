@@ -487,6 +487,18 @@ class TopicMemoryRepository:
             admission=admission,
         )
         channels = await self.index.search(connection, scope_id, request)
+        from powercontext.builtin.persistence.source_lifecycle import SourceLifecycleRepository
+
+        unavailable = await SourceLifecycleRepository().unavailable_topics(connection, scope_id)
+        if unavailable:
+            channels = channels.model_copy(
+                update={
+                    channel: tuple(
+                        hit for hit in getattr(channels, channel) if hit.artifact_ref.artifact_id not in unavailable
+                    )
+                    for channel in ("topic_fts", "topic_vector", "detail_fts", "detail_vector")
+                }
+            )
         await self._check_retrieval_shape(connection)
         outcome = _fuse_topic_memory_rankings(query, channels, limit, mode=used_mode, admission=admission)
         return TopicMemorySearchResult(

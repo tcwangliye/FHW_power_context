@@ -73,6 +73,8 @@ class RuntimeConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     _processing_aliases_used: tuple[str, ...] = PrivateAttr(default=())
+    memory_source_count_threshold: int | None = Field(default=None, strict=True, gt=0)
+    topic_memory_source_count_threshold: int | None = Field(default=None, strict=True, gt=0)
 
     @model_validator(mode="wrap")
     @classmethod

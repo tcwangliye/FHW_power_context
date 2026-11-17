@@ -828,6 +828,14 @@ class ScopedContextApplication:
         self._runtime = runtime
         self.scope_id = validate_scope_id(scope_id)
 
+    async def prepare_incremental(self, request: PrepareContextRequest, base_pack=None):
+        """Serialize the same prepared content, reusing a verified base prefix."""
+        from powercontext.builtin.runtime.context_pack import ContextPack, ContextPackDelta
+
+        content = await self.prepare(request)
+        target = ContextPack.from_content(content.content)
+        return target if base_pack is None else ContextPackDelta.between(base_pack, target)
+
     async def prepare(
         self,
         request: PrepareContextRequest,

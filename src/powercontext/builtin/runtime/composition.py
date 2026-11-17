@@ -656,6 +656,9 @@ async def open_builtin_runtime(
         runtime.artifact_processing_supervisor = await resources.enter_async_context(
             _open_artifact_processing_supervisor(config, contexts, processing_bindings, tracing=tracing)
         )
+        from powercontext.builtin.runtime.source_lifecycle import SourceLifecycleApplication
+
+        runtime.lifecycle = SourceLifecycleApplication(runtime, contexts.database, contexts.repositories.sources)
         contexts.profiles.operation_context = runtime._operation
         if config.handoff_report.enabled:
             runtime.handoff_report = HandoffReportApplication(
@@ -771,6 +774,14 @@ def _artifact_processing_bindings(  # noqa: C901 - validate and assemble one reg
             entrypoint = partial(run_family_worker, FamilyWorkerSpec(config=config, worker_security=worker_security))
         interval = None if family == "profile" else automatic[family]
         binding = canonical[family]
+        pending_provider = SourceProcessingPendingProvider(contexts.database, binding, family)
+        count_threshold = (
+            config.runtime.memory_source_count_threshold
+            if family == "memory"
+            else config.runtime.topic_memory_source_count_threshold
+            if family == "topic-memory"
+            else None
+        )
         configured.append(
             ArtifactProcessingBinding(
                 binding_name=binding,
@@ -787,6 +798,9 @@ def _artifact_processing_bindings(  # noqa: C901 - validate and assemble one reg
                 if family == "skill"
                 else SourceProcessingPendingProvider(contexts.database, binding, family),
                 automatic_scope_filter=enabled_profile_scopes if family == "profile" else None,
+                count_scope_filter=None
+                if count_threshold is None
+                else partial(pending_provider.count_eligible, threshold=count_threshold),
             )
         )
     _validate_processing_registrations(configured)

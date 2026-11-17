@@ -394,6 +394,75 @@ class OceanBaseMemoryVectorIndex:
         ).mappings()
         return MemorySearchChannels(vector=memory_channel_hits(rows, request.memories))
 
+    async def search_hybrid(
+        self,
+        connection: AsyncConnection,
+        scope_id: str,
+        request: MemorySearchRequest,
+        /,
+    ) -> MemorySearchChannels:
+        """Retrieve both native channels in a single bounded UNION statement."""
+        if request.embedding_profile != self.profile or request.query_vector is None:
+            raise CapabilityNotSupportedError("embedding-profile")
+        if not await self.vector_complete(connection, scope_id, request.memories, self.profile):
+            raise CapabilityNotSupportedError("vector")
+        tags = "" if request.tag_filter is None else memory_tag_sql("m")
+        vector_sql = _OCEANBASE_VECTOR_SEARCH_SQL
+        if request.tag_filter is not None:
+            vector_sql = vector_sql.replace("ORDER BY", tags + "ORDER BY").replace(" APPROXIMATE", "")
+        sql = f"""
+SELECT * FROM (
+  SELECT 'fts' AS channel, m.memory_artifact_id, m.head_revision,
+         m.entry_id, m.entry_version_id, v.text, NULL AS distance,
+         -MATCH(m.searchable_text) AGAINST (:fts_query) AS rank_score
+  FROM pc_memory_entry_heads AS m FORCE INDEX (ix_pc_memory_entry_heads_fts)
+  JOIN pc_memory_entry_versions AS v
+    ON v.scope_id = m.scope_id
+   AND v.memory_artifact_id = m.memory_artifact_id
+   AND v.entry_version_id = m.entry_version_id
+  WHERE m.scope_id = :scope_id
+    AND m.memory_artifact_id IN :memory_artifact_ids
+    AND MATCH(m.searchable_text) AGAINST (:fts_query)
+    {tags}
+  ORDER BY MATCH(m.searchable_text) AGAINST (:fts_query) DESC,
+           m.memory_artifact_id, m.entry_id, m.entry_version_id
+  LIMIT :candidate_limit
+) AS lexical_candidates
+UNION ALL
+SELECT 'vector' AS channel, q.memory_artifact_id, q.head_revision,
+       q.entry_id, q.entry_version_id, q.text, q.distance, q.distance AS rank_score
+FROM ({vector_sql}) AS q
+ORDER BY channel, rank_score, memory_artifact_id, entry_id, entry_version_id
+"""  # noqa: S608 - Only fixed internal fragments; query values use bound parameters.
+        parameters = [
+            bindparam("memory_artifact_ids", expanding=True),
+            bindparam("query_vector", type_=VECTOR(self.profile.dimension)),
+        ]
+        if request.tag_filter is not None:
+            parameters.extend((bindparam("tag_keys", expanding=True), bindparam("tag_hashes", expanding=True)))
+        statement = text(sql).bindparams(*parameters)
+        rows = (
+            (
+                await connection.execute(
+                    statement,
+                    {
+                        "scope_id": scope_id,
+                        "memory_artifact_ids": tuple(memory.artifact_id for memory in request.memories),
+                        "fts_query": request.analyzed_query,
+                        "query_vector": validate_embedding(request.query_vector, dimension=self.profile.dimension),
+                        "candidate_limit": request.candidate_limit,
+                        **memory_tag_parameters(request.tag_filter),
+                    },
+                )
+            )
+            .mappings()
+            .all()
+        )
+        return MemorySearchChannels(
+            fts=memory_channel_hits((row for row in rows if row["channel"] == "fts"), request.memories),
+            vector=memory_channel_hits((row for row in rows if row["channel"] == "vector"), request.memories),
+        )
+
     async def vector_complete(
         self,
         connection: AsyncConnection,

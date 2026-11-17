@@ -117,6 +117,7 @@ class ArtifactProcessingBinding:
     # Only automatic admission is filtered; already accepted requests retain
     # their own Worker authorization and domain completion semantics.
     automatic_scope_filter: Callable[[AsyncConnection, tuple[str, ...]], Awaitable[frozenset[str]]] | None = None
+    count_scope_filter: Callable[[AsyncConnection, tuple[str, ...]], Awaitable[frozenset[str]]] | None = None
 
     def __post_init__(self) -> None:
         if not self.binding_name or self.binding_name != self.binding_name.strip():
@@ -385,6 +386,7 @@ class _RunningWorker:
 
 @dataclass(slots=True)
 class _FamilyState:
+    count_after_scope: str | None = field(default=None, init=False)
     binding: ArtifactProcessingBinding
     ready: deque[str] = field(default_factory=deque)
     queued: set[str] = field(default_factory=set)
@@ -648,6 +650,8 @@ class ArtifactProcessingSupervisor:
                 state.next_discovery_at = loop.time() + _DISCOVERY_PAGE_DELAY_SECONDS
         else:
             state.reconcile_complete = True
+        if binding.count_scope_filter is not None:
+            await self._discover_count(state)
         # Alternate discovery channels so explicit traffic cannot monopolize admission.
         state.automatic_next = not state.automatic_next
         if state.automatic_next:
@@ -656,6 +660,36 @@ class ArtifactProcessingSupervisor:
         else:
             await self._discover_requested(state)
             await self._discover_automatic(state)
+
+    async def _discover_count(self, state: _FamilyState) -> None:
+        """Accept count-triggered work without changing interval or retry state."""
+        from powercontext.builtin.persistence.tables import SOURCE_JOURNAL_HEADS_TABLE
+
+        capacity = self._fresh_capacity(state)
+        if capacity <= 0:
+            return
+        after = getattr(state, "count_after_scope", None)
+        table = SOURCE_JOURNAL_HEADS_TABLE
+        statement = select(table.c.scope_id).order_by(table.c.scope_id).limit(_DISCOVERY_PAGE_SIZE)
+        if after is not None:
+            statement = statement.where(table.c.scope_id > after)
+        accepted = []
+        async with self._database.transaction() as connection:
+            await self._leases.require_fence(connection, self._require_current_fence())
+            scopes = tuple((await connection.scalars(statement)).all())
+            eligible = await state.binding.count_scope_filter(connection, scopes)
+            for scope in scopes:
+                if scope not in eligible or scope in state.queued or scope in state.running or scope in state.retries:
+                    continue
+                current = await self._intents.load(connection, scope, state.binding.binding_name, for_update=True)
+                if current is None or current.requested_generation <= current.handled_generation:
+                    await self._intents.request(connection, scope, state.binding.binding_name)
+                accepted.append(scope)
+                if len(accepted) >= capacity:
+                    break
+        state.count_after_scope = scopes[-1] if len(scopes) == _DISCOVERY_PAGE_SIZE else None
+        for scope in accepted:
+            self._enqueue(state, scope)
 
     async def _discover_requested(self, state: _FamilyState) -> None:
         capacity = self._fresh_capacity(state)
@@ -1083,6 +1117,8 @@ class ArtifactProcessingSupervisor:
         for state in self._families.values():
             if len(state.running) >= state.binding.max_workers:
                 continue
+            if state.binding.count_scope_filter is not None:
+                deadlines.append(now + self._tick)
             deadlines.extend(
                 retry.deadline
                 for scope, retry in state.retries.items()
