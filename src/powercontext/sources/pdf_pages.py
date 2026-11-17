@@ -156,6 +156,13 @@ _QUESTION_NOISE = frozenset([
     "data",
     "based",
     "profile",
+    "who",
+    "when",
+    "where",
+    "reasonably",
+    "healthy",
+    "among",
+    "any",
 ])
 _FINANCIAL_CONCEPTS = (
     (
@@ -169,7 +176,18 @@ _FINANCIAL_CONCEPTS = (
         ("legal proceedings", "litigation"),
     ),
     (
-        frozenset({"income", "earnings", "ebitda", "profit", "margin", "revenue", "sales", "growth", "intensive"}),
+        frozenset({
+            "income",
+            "earnings",
+            "ebitda",
+            "profit",
+            "margin",
+            "revenue",
+            "sales",
+            "growth",
+            "intensive",
+            "tax",
+        }),
         ("income", "profit", "earnings", "revenue", "sales", "operating"),
         (
             "statement of income",
@@ -196,14 +214,33 @@ _FINANCIAL_CONCEPTS = (
         ("statement of cash flows", "statements of cash flows", "cash flow statement"),
     ),
     (
-        frozenset({"balance", "assets", "liabilities", "equity", "debt", "intensive"}),
+        frozenset({"balance", "assets", "liabilities", "equity", "debt", "intensive", "liquidity", "quick"}),
         ("assets", "liabilities", "equity"),
         ("balance sheet", "balance sheets", "financial position"),
     ),
     (
-        frozenset({"segment", "segments", "growth", "margin"}),
+        frozenset({"segment", "segments", "growth", "margin", "categories", "products", "services", "customers"}),
         ("segment", "organic", "sales", "operating", "margin"),
-        ("segment results", "segment performance", "results of operations", "operating results"),
+        (
+            "segment results",
+            "segment performance",
+            "results of operations",
+            "operating results",
+            "business segment data",
+            "summary of business segment data",
+        ),
+    ),
+    (
+        frozenset({"products", "services", "customers", "concentration"}),
+        ("business", "products", "services", "customers", "principal", "major"),
+        (
+            "business",
+            "business overview",
+            "principal products",
+            "products and services",
+            "customers",
+            "major customers",
+        ),
     ),
 )
 
@@ -225,8 +262,32 @@ def _query_plan(question: str):
     queries = [question]
     queries.extend(" ".join(alias[:2]) for _, alias, _ in concepts)
     queries.extend(" ".join(meaningful[offset : offset + 4]) for offset in range(0, len(meaningful), 4))
-    terms = set(lexical_terms(" ".join(word for word in words if word not in _QUESTION_NOISE)))
+    terms = set(lexical_terms(" ".join(word for word in meaningful if not word.isdigit())))
     return tuple(dict.fromkeys(query for query in queries if query)), terms, concepts
+
+
+def _heading_match(lines, headings):
+    prefixes = {"consolidated", "condensed", "combined", "unaudited", "item"}
+    suffixes = {
+        "in",
+        "millions",
+        "thousands",
+        "dollars",
+        "except",
+        "per",
+        "share",
+        "amounts",
+        "and",
+        "data",
+        "continued",
+        "unaudited",
+    }
+    for line in lines:
+        for title in headings:
+            before, separator, after = line.partition(title)
+            if separator and set(before.split()) <= prefixes and set(after.split()) <= suffixes:
+                return True
+    return False
 
 
 def _rank_pages(documents, query_terms, concepts):
@@ -237,6 +298,25 @@ def _rank_pages(documents, query_terms, concepts):
     lengths = [sum(count.values()) for count in counts]
     average = sum(lengths) / max(len(lengths), 1) or 1
     frequencies = Counter(term for count in counts for term in set(count))
+    query_terms = query_terms | {
+        first + second
+        for first in query_terms
+        for second in query_terms
+        if first != second and len(first) > 1 and len(second) > 1 and first + second in frequencies
+    }
+    page_lines = [[" ".join(re.findall(r"[a-z]+", line.casefold())) for line in body.splitlines()] for body in bodies]
+    contents_pages = [
+        sum(bool(re.match(r"^item\s+\d", line.strip(), re.I)) for line in body.splitlines()) >= 6 for body in bodies
+    ]
+
+    heading_pages = [
+        [
+            index
+            for index in range(len(documents))
+            if not contents_pages[index] and _heading_match(page_lines[index], headings)
+        ]
+        for _, _, headings in concepts
+    ]
 
     def relevance(index):
         count = counts[index]
@@ -247,25 +327,43 @@ def _rank_pages(documents, query_terms, concepts):
                 continue
             weight = math.log(1 + (len(counts) - frequencies[term] + 0.5) / (frequencies[term] + 0.5))
             score += weight * frequency * 2.2 / (frequency + 1.2 * (0.25 + 0.75 * lengths[index] / average))
-        lines = [" ".join(re.findall(r"[a-z]+", line.casefold())) for line in bodies[index].splitlines()]
-        contents_page = (
-            sum(bool(re.match(r"^item\s+\d", line.strip(), re.I)) for line in bodies[index].splitlines()) >= 6
-        )
-        for _, aliases, headings in concepts:
-            if not contents_page and any(
-                title in line and len(line.split()) <= len(title.split()) + 6 for line in lines for title in headings
-            ):
-                score += 25.0
+        for concept_index, (_, aliases, _) in enumerate(concepts):
+            if index in heading_pages[concept_index]:
+                score += 8.0
             alias_terms = set(lexical_terms(" ".join(aliases)))
             score += min(3.0, sum(0.5 for term in alias_terms if count[term]))
-        return score * (0.15 if contents_page else 1.0)
+        return score * (0.15 if contents_pages[index] else 1.0)
 
-    return sorted(range(len(documents)), key=lambda index: (-relevance(index), index))
+    scores = [relevance(index) for index in range(len(documents))]
+    anchors = []
+    for pages in heading_pages:
+        if pages:
+            strongest = max(
+                pages,
+                key=lambda index: (
+                    len(re.findall(r"\b\d[\d,.]*\b", bodies[index])) / max(lengths[index], 1),
+                    scores[index],
+                    -index,
+                ),
+            )
+            if strongest not in anchors:
+                anchors.append(strongest)
+    return [
+        *anchors,
+        *(
+            index
+            for index in sorted(range(len(documents)), key=lambda index: (-scores[index], index))
+            if index not in anchors
+        ),
+    ]
 
 
 def _matching_documents(documents, question):
+    from powercontext.builtin.evidence.lexical import lexical_terms
+
     compact_query = re.sub(r"[^a-z0-9]", "", question.casefold())
     named = []
+    names = set()
     for document in documents:
         identity = document.text.partition("\n")[0].casefold()
         company = re.split(r"(?:19|20)\d{2}", identity, maxsplit=1)[0]
@@ -273,7 +371,35 @@ def _matching_documents(documents, question):
         company = re.sub(r"[^a-z0-9]", "", company)
         if len(company) >= 2 and company in compact_query:
             named.append(document)
-    return named or documents
+            names.add(company)
+    if named:
+        words = re.findall(r"[a-z0-9]+", question.casefold())
+        excluded = {word for word in words if any(word in name for name in names)}
+        return named, set(lexical_terms(" ".join(excluded)))
+    acronyms = set(re.findall(r"\b[A-Z]{2,}\b", question)) - {
+        "USD",
+        "FY",
+        "GAAP",
+        "IFRS",
+        "EPS",
+        "EBIT",
+        "EBITDA",
+        "SEC",
+        "US",
+        "USA",
+    }
+    for acronym in sorted(acronyms):
+        matching = {
+            document.text.partition("\n")[0]
+            for document in documents
+            if re.search(rf"\b{re.escape(acronym)}\b", document.text.partition("\n")[2], re.I)
+        }
+        if len(matching) == 1:
+            return (
+                [document for document in documents if document.text.partition("\n")[0] in matching],
+                set(lexical_terms(acronym)),
+            )
+    return documents, set()
 
 
 def _page_locations(reference):
@@ -306,7 +432,7 @@ def _select_pages(anchors, records, limit):
     selected = []
     seen = set()
     by_entry = {record.entry.entry_id: _page_locations(record.entry) for record in records.entries}
-    primary = min(len(anchors), max(1, limit // 2))
+    primary = min(len(anchors), max(1, limit - max(1, limit // 4)))
     for citation in (*anchors[:primary], *_neighbors(anchors, records, limit), *anchors[primary:]):
         locations = by_entry.get(citation.entry_id, ())
         if locations and not any(location in seen for location in locations):
@@ -348,8 +474,10 @@ async def search_pdf_pages(memory, question: str, limit: int = 10) -> tuple[Memo
             score=0.0,
             matched_by=(),
         )
-    documents = _matching_documents([hit for key, hit in candidates.items() if key in pdf_entries], question)
-    order = _rank_pages(documents, terms, concepts)
+    documents, identity_terms = _matching_documents(
+        [hit for key, hit in candidates.items() if key in pdf_entries], question
+    )
+    order = _rank_pages(documents, terms - identity_terms, concepts)
     anchors = [
         MemoryCitation(
             memory_ref=documents[index].memory_ref,

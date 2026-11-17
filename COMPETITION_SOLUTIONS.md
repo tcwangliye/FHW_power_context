@@ -25,11 +25,15 @@ Pages are parsed from the complete original PDF and stored through the public
 Source/Runtime/Memory path. Ranking combines native full-text search with all
 active PDF entries returned by the public Memory listing API. This prevents a
 global top-100 candidate cutoff from excluding a report's evidence. Company
-names in document IDs are matched across punctuation and digits; explicit
-company queries prioritize that company's reports. Financial concepts include
-cashflow, margins, capital intensity and segment performance. Short financial
-headings may contain units. Continuations use actual stored neighboring page
-citations, with duplicate physical document/revision/page identities removed.
+names in document IDs are matched across punctuation and digits. Unambiguous
+acronyms are resolved from the supplied report text. Company identity and fiscal
+year tokens do not compete with substantive evidence terms in body ranking.
+Financial concepts include cashflow, liquidity, margins, tax, capital intensity
+and segment performance. Actual short headings are distinguished from prose
+references; matching statements and segment tables receive dedicated positions.
+The remaining budget favors direct matches over neighboring pages.
+Continuations use actual stored page citations, with duplicate physical
+document/revision/page identities removed.
 
 The complete stored-page scan is linear in the collection size. It is intended
 for report collections at the competition scale, not an unmeasured scalability
@@ -44,6 +48,11 @@ windows even when a short introduction also matches the query; introductory
 matches cannot suppress evidence near the end of a longer result sentence.
 Ordinary context preparation remains the default.
 
+Before filling remaining space, the selector compares disjoint windows from
+the same exact entry. It charges both citations and the JSON separator, and
+scores their union without rewarding repeated sentences. This prevents a
+large contiguous window from consuming the space needed for a second result.
+
 ## Verification
 
 Run the unchanged official suites using the fixed competition dependencies:
@@ -53,17 +62,19 @@ make -C competition docker-test
 ```
 
 The ten public suites pass 95 tests. Related product regression suites pass
-85 tests, including multi-report company matching after restart, duplicate-page
-citations, and long result sentences following matching introductions. These
-three defect scenarios fail on the previous product submission.
+86 tests, including multi-report company and acronym matching after restart,
+statement headings versus matching narrative, duplicate-page citations, long
+result sentences and disconnected evidence under a shared budget.
 
 Independent diagnostics use original public FinanceBench PDFs and SciFact TRAIN
 abstracts. Candidate processes receive only original inputs, queries and
-budgets; annotation scoring runs separately. Three additional reports contain
-467 pages and six questions. A separate sample contains 120 previously unused
-training claims, three abstracts per claim and both 1,400/1,800-byte budgets;
-every candidate is stored through the real Memory API. These developer checks
-are not official competition results.
+budgets; annotation scoring runs separately. Additional report collections
+contain 467 pages/six questions and 571 pages/21 questions. A SciFact sample has
+120 training claims, three abstracts per claim and both 1,400/1,800-byte budgets;
+every candidate is stored and each fragment is read back through the real
+Memory API. A separate stress set unions multiple annotation sets for a claim;
+it still has incomplete coverage and is not a reproduction of the undisclosed
+official scoring selection. These developer checks are not official results.
 
 Changed Python files pass Ruff lint/format and focused type checking. Full
 pre-commit runs retain repository-wide type diagnostics; this is not reported

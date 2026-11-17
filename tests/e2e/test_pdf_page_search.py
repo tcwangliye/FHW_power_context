@@ -105,11 +105,24 @@ def test_company_identity_and_cashflow_question_in_a_multi_report_collection(tmp
             cases.extend((
                 (f"OTHER_{index}_2025_10K", 1, "Consolidated Statements of Cash Flows\nOperating cash flows 70"),
                 (f"OTHER_{index}_2025_10K", 2, "Consolidated Balance Sheets\nTotal assets 90"),
+                (
+                    f"OTHER_{index}_2025_10K",
+                    3,
+                    "Consolidated Statements of Income\nRevenue 999\nOperating income 990\nNet income 899",
+                ),
             ))
         cases.extend((
             ("3M_2025_10K", 1, "Company introduction and ordinary business descriptions."),
             ("3M_2025_10K", 2, "CONSOLIDATED STATEMENTS OF CASH FLOWS (In millions)\nOperating activities 8"),
             ("3M_2025_10K", 3, "Investing activities\nCapital expenditures 4"),
+            ("NORTHSTAR_2025_10K", 1, "Northstar Instruments (NSI) manufactures measurement equipment."),
+            (
+                "NORTHSTAR_2025_10K",
+                2,
+                "Consolidated Statements of Income (in millions)\nRevenue 120\nOperating income 24\nNet income 18",
+            ),
+            ("NORTHSTAR_2025_10K", 3, "Notes on accounting policies."),
+            ("NORTHSTAR_2025_10K", 4, "Improving operating margin and gross margin are financial goals. " * 40),
         ))
         async with open_builtin_runtime(config, candidate_pipeline=_PagePipeline()) as runtime:
             assert runtime.scopes is not None
@@ -138,5 +151,10 @@ def test_company_identity_and_cashflow_question_in_a_multi_report_collection(tmp
             assert all(entry.text.startswith("3M_2025_10K\n") for entry in entries)
             assert "Operating activities 8" in entries[0].text
             assert "Capital expenditures 4" in entries[1].text
+            citations = await search_pdf_pages(memory, "Does NSI have improving gross margin in FY25?", limit=2)
+            entries = [(await memory.get(GetMemoryEntryRequest(citation=citation))).entry for citation in citations]
+            assert len(entries) == 2
+            assert all(entry.text.startswith("NORTHSTAR_2025_10K\n") for entry in entries)
+            assert "Operating income 24" in entries[0].text
 
     asyncio.run(scenario())

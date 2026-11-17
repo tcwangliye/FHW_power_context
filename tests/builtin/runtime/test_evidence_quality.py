@@ -81,3 +81,13 @@ def test_long_result_sentence_is_considered_even_when_short_introduction_fits():
     )
     result = _select("cobalt sensor threshold", [("measurement", text)], max_bytes=950)
     assert any("73 degrees" in fragment.text for fragment in result.fragments)
+
+
+def test_disconnected_results_share_the_budget_without_intervening_background():
+    first = "RESULTS The cobalt sensor increased sensitivity by 27% in blinded experiments. "
+    last = "The cobalt sensor improved accuracy by 32% in independent experiments."
+    background = "Participants followed the standard protocol and completed all required study visits. "
+    text = first + background * 10 + last
+    result = _select("cobalt sensor sensitivity accuracy", [("trial", text)], max_bytes=1000)
+    assert any(first.strip() in fragment.text for fragment in result.fragments)
+    assert any(last in fragment.text for fragment in result.fragments)

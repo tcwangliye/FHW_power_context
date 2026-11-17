@@ -203,8 +203,40 @@ def _candidates(entries, utility, query, max_bytes):
     return candidates
 
 
-def _fit_fragments(entries, candidates, max_bytes):
-    selected: tuple[PreparedEvidenceFragment, ...] = ()
+def _initial_fragments(entries, candidates, max_bytes, interval_utility):
+    overhead = len(_render(()).encode("utf-8"))
+    feasible = [
+        (score, fragment, size - overhead)
+        for score, fragment in candidates
+        if score > 0 and (size := len(_render((fragment,)).encode("utf-8"))) <= max_bytes
+    ]
+    if not feasible:
+        return ()
+    best_score, first, _ = feasible[0]
+    selected = (first,)
+    for index, (score, fragment, size) in enumerate(feasible):
+        if score * 2 <= best_score:
+            break
+        for other_score, other, other_size in feasible[index + 1 :]:
+            if score + other_score <= best_score:
+                break
+            if fragment.address != other.address:
+                continue
+            if fragment.start <= other.end and other.start <= fragment.end:
+                continue
+            if overhead + size + other_size + 1 > max_bytes:
+                continue
+            text = next(text for address, text in entries if address == fragment.address)
+            extra_bytes = other_size + 1 - len(json.dumps(other.text, ensure_ascii=False).encode("utf-8"))
+            combined = interval_utility(text, ((fragment.start, fragment.end), (other.start, other.end)), extra_bytes)
+            if combined > best_score:
+                best_score = combined
+                selected = (fragment, other)
+    return selected
+
+
+def _fit_fragments(entries, candidates, max_bytes, interval_utility):
+    selected = _initial_fragments(entries, candidates, max_bytes, interval_utility)
     # Each accepted interval must add new source characters. Merge intervals from
     # the same entry to avoid paying another citation for neighboring sentences.
     for _, candidate in candidates:
@@ -260,21 +292,25 @@ def select_memory_fragments(request, groups) -> PreparedContextBuild:
         text: [(start, end, sentence_score(text, start, end)) for start, end in _sentences(text)] for _, text in entries
     }
 
-    def utility(text: str, start: int, end: int) -> float:
+    def interval_utility(text: str, intervals, extra_bytes: int = 0) -> float:
         scores = {}
-        for a, b, score in sentence_scores[text]:
-            if a >= start and b <= end:
-                key = " ".join(text[a:b].casefold().split())
+        for sentence_start, sentence_end, score in sentence_scores[text]:
+            if any(sentence_start >= start and sentence_end <= end for start, end in intervals):
+                key = " ".join(text[sentence_start:sentence_end].casefold().split())
                 scores[key] = max(scores.get(key, 0), score)
         if not scores:
-            return sentence_score(text, start, end)
+            return sum(sentence_score(text, start, end) for start, end in intervals)
         # Add evidence across sentences. A window spanning a section boundary
         # must not lend its RESULTS label to background or objective sentences.
         # Repeating the same sentence does not add another piece of evidence.
-        return sum(scores.values()) / (1 + len(text[start:end].encode("utf-8")) / 1500)
+        size = extra_bytes + sum(len(text[start:end].encode("utf-8")) for start, end in intervals)
+        return sum(scores.values()) / (1 + size / 1500)
+
+    def utility(text: str, start: int, end: int) -> float:
+        return interval_utility(text, ((start, end),))
 
     candidates = _candidates(entries, utility, query, request.max_bytes)
-    selected = _fit_fragments(entries, candidates, request.max_bytes)
+    selected = _fit_fragments(entries, candidates, request.max_bytes, interval_utility)
     if not selected:
         return PreparedContextBuild(
             context=PreparedContext(status="empty", content=None, content_bytes=0), origins=(), fragments=()
